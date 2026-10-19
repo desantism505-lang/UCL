@@ -1,0 +1,1717 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="favicon.ico" sizes="any" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#121A3D" />
+<title>Champions League 2026/27 — Scanner & Screener</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#0A0E27;
+    --panel:#121A3D;
+    --panel-2:#0D1230;
+    --panel-header:#1B2550;
+    --zebra:#161F45;
+    --line:#2A3568;
+    --text:#FFFFFF;
+    --text-2:#D6DCF5;
+    --muted:#8A93C4;
+    --accent:#3DA5FF;
+    --accent-dim:#2E7BC4;
+    --accent-ink:#061225;
+    --warn:#F2A65A;
+    --warn-ink:#3D2408;
+    --bad:#E8735B;
+    --bad-ink:#3D0F08;
+    --radius:14px;
+    --radius-sm:8px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text-2);
+    font-family:'Inter',sans-serif;
+    font-variant-numeric:tabular-nums;
+    line-height:1.5;
+    min-height:100vh;
+  }
+  h1,h2,h3,.display{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    letter-spacing:-0.01em;
+    color:var(--text);
+  }
+  a{color:var(--accent);}
+
+  header{
+    padding:24px 32px 0;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  header h1{font-size:21px;margin:0;color:var(--text);}
+  header h1 span{color:var(--accent);}
+  header p{margin:6px 0 0;color:var(--muted);font-size:13px;max-width:460px;}
+  .fileload{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-size:12px;
+    color:var(--muted);
+  }
+  .fileload input{display:none;}
+  .fileload label{
+    border:1px solid var(--line);
+    padding:9px 16px;
+    border-radius:var(--radius-sm);
+    cursor:pointer;
+    color:var(--text-2);
+    font-weight:500;
+    transition:border-color .15s, background .15s;
+  }
+  .fileload label:hover{border-color:var(--accent-dim);background:var(--panel);}
+  #dataStatus{color:var(--accent);font-weight:600;}
+
+  nav.sitenav{
+    display:flex;
+    gap:4px;
+    padding:16px 32px 0;
+    border-bottom:1px solid var(--line);
+  }
+  nav.sitenav a{
+    display:inline-block;
+    padding:10px 16px;
+    font-size:13px;
+    font-weight:600;
+    color:var(--muted);
+    text-decoration:none;
+    border-bottom:2px solid transparent;
+    transition:color .15s, border-color .15s;
+  }
+  nav.sitenav a:hover{color:var(--text);}
+  nav.sitenav a.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+  .controls{
+    display:flex;
+    gap:12px;
+    padding:16px 32px;
+    border-bottom:1px solid var(--line);
+    background:var(--panel-2);
+    flex-wrap:wrap;
+  }
+  .ctrl{
+    flex:1 1 220px;
+    padding:12px 18px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+  }
+  .ctrl label{
+    display:block;
+    font-size:11px;
+    color:var(--muted);
+    margin-bottom:6px;
+    font-weight:500;
+  }
+  .ctrl select{
+    width:100%;
+    background-color:var(--panel);
+    border:none;
+    color:var(--text);
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:16px;
+    padding:2px 0;
+  }
+  .ctrl select:focus{outline:2px solid var(--accent);outline-offset:2px;}
+  .ctrl select option{
+    background-color:var(--panel);
+    color:var(--text);
+  }
+  select, input, button{
+    color-scheme: dark;
+    font-family:'Inter',sans-serif;
+  }
+
+  main{padding:32px 32px 60px;max-width:1180px;margin:0 auto;}
+
+  .empty{
+    color:var(--muted);
+    padding:60px 0;
+    text-align:center;
+    font-size:14px;
+  }
+
+  .grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:24px;
+  }
+  @media (max-width:820px){ .grid{grid-template-columns:1fr;} }
+
+  .panel{
+    border:1px solid var(--line);
+    background:var(--panel);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+  .panel h2{
+    font-size:14px;
+    margin:0;
+    padding:14px 20px;
+    background:var(--panel-header);
+    border-bottom:1px solid var(--line);
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    color:var(--accent);
+  }
+  .panel h2 .tag{
+    font-family:'Inter',sans-serif;
+    font-weight:500;
+    font-size:11px;
+    color:var(--muted);
+  }
+  .panel .body{padding:18px 20px;}
+
+  table.stat{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+  }
+  table.stat th{
+    text-align:left;
+    font-weight:700;
+    color:var(--accent);
+    background:var(--panel-header);
+    padding:10px 12px 10px 0;
+    padding-left:12px;
+    font-size:10.5px;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+  }
+  table.stat th:first-child{padding-left:0;}
+  table.stat td{
+    padding:11px 12px 11px 0;
+    padding-left:12px;
+    color:var(--text-2);
+    font-weight:500;
+  }
+  table.stat td:first-child{padding-left:0;}
+  table.stat tr:nth-child(even) td{background:var(--zebra);}
+  table.stat td.num, table.stat th.num{text-align:right;}
+  table.stat tr:last-child td{border-bottom:none;}
+
+  .metricname{color:var(--text);font-weight:600;}
+  .rank{color:var(--accent);font-weight:700;}
+  .rank-bad{color:var(--bad);font-weight:700;}
+  .rank.nd{color:var(--muted);font-weight:400;}
+  .chip{
+    display:inline-block;
+    background:var(--accent);
+    color:var(--accent-ink);
+    font-weight:700;
+    padding:4px 10px;
+    border-radius:6px;
+    font-size:12.5px;
+  }
+  .chip.warn{background:var(--warn);color:var(--warn-ink);}
+  .chip.bad{background:var(--bad);color:var(--bad-ink);}
+  .chip.flat{background:var(--line);color:var(--text-2);}
+  .status-pill{
+    display:inline-block;
+    font-size:10px;
+    padding:3px 9px;
+    border:1px solid var(--line);
+    border-radius:999px;
+    font-weight:600;
+  }
+  .status-OK{color:var(--accent);border-color:var(--accent-dim);}
+  .status-CAMPIONE{color:var(--warn);border-color:var(--warn);}
+  .status-NO{color:var(--bad);border-color:var(--bad);}
+
+  .rolepicker{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-bottom:12px;
+  }
+  .rolepicker button{
+    background:none;
+    border:1px solid var(--line);
+    color:var(--muted);
+    font-family:'Inter',sans-serif;
+    font-size:11px;
+    padding:5px 10px;
+    cursor:pointer;
+  }
+  .rolepicker button.active{
+    color:var(--bg);
+    background:var(--accent);
+    border-color:var(--accent);
+  }
+
+  .baseline-value{
+    display:inline-block;
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:18px;
+    color:var(--accent-ink);
+    background:var(--accent);
+    padding:3px 12px;
+    border-radius:8px;
+  }
+  .subtle{color:var(--muted);font-size:11px;}
+  .screener-form{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .screener-form select{
+    background-color:var(--panel-2);
+    color:var(--text);
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    padding:7px 10px;
+  }
+  .screener-form select option{background-color:var(--panel);color:var(--text);}
+  .screener-form button{
+    background:var(--accent);
+    color:var(--accent-ink);
+    border:none;
+    border-radius:var(--radius-sm);
+    font-family:'Inter',sans-serif;
+    font-weight:700;
+    font-size:12px;
+    padding:8px 14px;
+    cursor:pointer;
+  }
+  .screener-form button.secondary{
+    background:none;
+    color:var(--muted);
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+  }
+  .verdict-fav{color:var(--accent);font-weight:700;}
+  .verdict-nofav{color:var(--muted);}
+  .rowdel{
+    background:none;border:none;color:var(--bad);cursor:pointer;font-size:14px;
+  }
+
+  .match-title{
+    font-size:20px;
+    color:var(--accent);
+    margin:0 0 4px;
+  }
+  .facts-list{font-size:12px;line-height:1.9;color:var(--text-2);}
+  .facts-list .tag-inline{color:var(--muted);font-size:10.5px;}
+  .info-title{border-bottom:1px dotted var(--muted);cursor:help;color:var(--text);}
+  th.sortable{cursor:pointer;user-select:none;}
+  th.sortable:hover{color:var(--text);}
+  th.sortable .arrow{opacity:0.7;font-size:9px;margin-left:3px;}
+  .panel-collapse-btn{
+    background:none;
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+    color:var(--muted);
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:11px;
+    padding:4px 10px;
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .panel-collapse-btn:hover{color:var(--text);border-color:var(--accent-dim);}
+  .section-gap{margin-top:28px;}
+
+  .filter-group{
+    display:flex;
+    flex-wrap:wrap;
+    gap:4px 12px;
+    align-items:center;
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+    padding:9px 14px;
+    font-size:12px;
+    background:var(--panel-2);
+  }
+  .chkfilter{display:inline-flex;flex-wrap:wrap;align-items:center;gap:2px 8px;padding:3px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);}
+  .chkfilter-label{color:var(--muted);font-weight:600;margin-right:2px;}
+  .chkfilter label{display:inline-flex;align-items:center;gap:3px;cursor:pointer;white-space:nowrap;}
+  .msdrop{position:relative;display:inline-block;}
+  .msdrop-btn{background:var(--panel);color:var(--text);border:1px solid var(--line);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-family:'Inter',sans-serif;}
+  .msdrop-btn:hover{border-color:var(--accent-dim);}
+  .msdrop-btn.active-filter{border-color:var(--accent);color:var(--accent);}
+  .msdrop-panel{position:absolute;top:100%;left:0;margin-top:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;z-index:30;display:none;flex-direction:column;gap:5px;min-width:170px;box-shadow:0 6px 16px rgba(0,0,0,0.4);}
+  .msdrop-panel.open{display:flex;}
+  .msdrop-panel label{display:flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;font-size:12px;color:var(--text-2);}
+  .filter-group label{
+    display:flex;
+    align-items:center;
+    gap:5px;
+    color:var(--text-2);
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .filter-group input[type=checkbox]{width:14px;height:14px;}
+  .filter-label{color:var(--muted);font-size:11px;margin-right:4px;}
+  .btn-export{
+    background:none;
+    border:1px solid var(--accent-dim);
+    border-radius:var(--radius-sm);
+    color:var(--accent);
+    font-family:'Inter',sans-serif;
+    font-weight:700;
+    font-size:12px;
+    padding:8px 14px;
+    cursor:pointer;
+  }
+  .miniform{
+    display:flex;
+    gap:16px;
+    flex-wrap:wrap;
+    padding:16px 32px;
+    border-bottom:1px solid var(--line);
+    background:var(--panel-2);
+    align-items:flex-end;
+  }
+  .miniform > div{display:flex;flex-direction:column;gap:4px;}
+  .miniform label{font-size:11px;color:var(--muted);}
+  .miniform select{
+    background-color:var(--panel);
+    color:var(--text);
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    padding:7px 9px;
+    min-width:160px;
+  }
+  .miniform select option{background-color:var(--panel);color:var(--text);}
+
+
+  /* Tabelle Scanner/Preferiti: a tutta larghezza, celle compatte, niente scroll orizzontale */
+  #scnTable th, #scrTable th{padding:9px 6px;font-size:10px;vertical-align:bottom;}
+  #scnTable td, #scrTable td{padding:8px 6px;font-size:12.5px;vertical-align:middle;}
+  #scnTable td:first-child, #scrTable td:first-child, #scnTable th:first-child, #scrTable th:first-child{padding-left:10px;}
+  #scnTable input[type=text], #scrTable input[type=text]{width:54px !important;}
+  #scnTable td.nw, #scrTable td.nw{white-space:nowrap;}
+  .status-pill{white-space:nowrap;}
+  /* Hit venue: chip sopra, ±pp sempre sotto (mai di lato, anche con chip corto tipo 0%) */
+  .hitcell{display:flex;flex-direction:column;align-items:flex-end;gap:2px;line-height:1.2;}
+  .hitcell .chip{white-space:nowrap;}
+  .hitcell .subtle{white-space:nowrap;}
+
+  footer{
+    padding:24px 32px 48px;
+    color:var(--muted);
+    font-size:11px;
+    max-width:none;
+    margin:0 auto;
+  }
+
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Champions League 2026/27 <span>· Scanner &amp; Screener</span></h1>
+    <p>Trova le linee favorevoli su tutta la giornata, filtra per quello che ti interessa, scarica in Excel. Le quote e il valore li calcoli qui.</p>
+  </div>
+  <div class="fileload">
+    <span id="dataStatus">dati non caricati</span>
+    <span id="syncStatus" class="subtle" title="Stato sincronizzazione quote e preferiti con il cloud"></span>
+    <label for="fileInput">Carica file aggiornato (.xlsx)</label>
+    <input type="file" id="fileInput" accept=".xlsx,.xls" />
+  </div>
+</header>
+<nav class="sitenav">
+  <a href="serie.html">Serie &amp; Ritardi</a>
+  <a href="index.html">Matchup Engine</a>
+  <a href="scanner.html" class="active">Scanner &amp; Screener</a>
+  <a href="multigol.html">Multigol</a>
+  <a href="arbitri.html">Arbitri</a>
+  <a href="classifiche.html">Classifiche</a>
+</nav>
+
+
+<main style="max-width:none;width:100%;margin:0 auto;padding:20px 20px 0;">
+
+<section id="scannerSection">
+  <div class="panel">
+    <h2>Scanner giornata <span class="tag">evidenzia in automatico le linee favorevoli per tutti i giocatori della giornata</span></h2>
+    <div class="body">
+      <div class="screener-form" style="margin-bottom:10px;">
+        <select id="scnGiornata"></select>
+        <select id="scnMatch"><option value="ALL">Tutte le partite</option></select>
+        <select id="scnCriterio">
+          <option value="MEDIA">Media venue &gt; Linea</option>
+          <option value="HIT" selected>Hit rate venue ≥ soglia</option>
+        </select>
+        <span id="scnMinHitWrap">
+          <select id="scnMinHit">
+            <option value="0.5">Hit venue ≥ 50%</option>
+            <option value="0.6">Hit venue ≥ 60%</option>
+            <option value="0.7" selected>Hit venue ≥ 70%</option>
+            <option value="0.8">Hit venue ≥ 80%</option>
+            <option value="0.9">Hit venue ≥ 90%</option>
+          </select>
+        </span>
+        <select id="scnMinN">
+          <option value="2">campione min. 2 partite</option>
+          <option value="3" selected>campione min. 3 partite</option>
+          <option value="4">campione min. 4 partite</option>
+          <option value="5">campione min. 5 partite</option>
+        </select>
+        <button id="scnRun">Scansiona</button>
+        <button id="scnExport" class="btn-export">⬇ Scarica Excel</button>
+      </div>
+
+      <div class="filter-group" style="margin-bottom:6px;">
+        <span class="filter-label">Mercati:</span>
+        <label><input type="checkbox" class="scnMercatoChk" value="TIRI" checked /> Tiri</label>
+        <label><input type="checkbox" class="scnMercatoChk" value="TIRI_IN_PORTA" checked /> Tiri in porta</label>
+        <label><input type="checkbox" class="scnMercatoChk" value="FALLI_COMMESSI" checked /> Falli commessi</label>
+        <label><input type="checkbox" class="scnMercatoChk" value="FALLI_SUBITI" checked /> Falli subiti</label>
+        <label><input type="checkbox" class="scnMercatoChk" value="CARTELLINO" checked /> Cartellino</label>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Linee:</span>
+        <label><input type="checkbox" class="scnLineaChk" value="0.5" checked /> 0.5</label>
+        <label><input type="checkbox" class="scnLineaChk" value="1.5" checked /> 1.5</label>
+        <label><input type="checkbox" class="scnLineaChk" value="2.5" checked /> 2.5</label>
+        <label><input type="checkbox" class="scnLineaChk" value="3.5" checked /> 3.5</label>
+      </div>
+
+      <div class="filter-group" id="scnFilterPanel" style="margin-bottom:6px;background:var(--panel-2);padding:10px;border-radius:8px;">
+        <span class="filter-label">Filtra risultati:</span>
+        <input type="text" id="scnFText" placeholder="cerca giocatore/partita" style="background:var(--panel);color:var(--text);border:1px solid var(--line);padding:5px 8px;border-radius:6px;width:170px;" />
+        <div class="msdrop" id="scnFVenueDrop">
+          <button type="button" class="msdrop-btn" onclick="toggleMsDrop('scnFVenueDrop')">Squadra: complessivo ▾</button>
+          <div class="msdrop-panel">
+            <label><input type="radio" name="scnFVenue" class="scnFVenueRad" value="" checked /> Complessivo (tutte e due)</label>
+            <label><input type="radio" name="scnFVenue" class="scnFVenueRad" value="HOME" /> Casa (solo squadra di casa)</label>
+            <label><input type="radio" name="scnFVenue" class="scnFVenueRad" value="AWAY" /> Trasferta (solo squadra ospite)</label>
+          </div>
+        </div>
+        <select id="scnFTit" title="Usa le formazioni salvate in Matchup Engine" style="background:var(--panel);color:var(--text);border:1px solid var(--line);padding:5px 8px;border-radius:6px;">
+          <option value="">Titolare: tutti</option>
+          <option value="tit">Solo titolari (✓)</option>
+          <option value="conf">Solo titolari confermati</option>
+          <option value="notN">Nascondi esclusi (✗), tieni senza formazione</option>
+        </select>
+        <select id="scnFCV" style="background:var(--panel);color:var(--text);border:1px solid var(--line);padding:5px 8px;border-radius:6px;">
+          <option value="">Consistenza: tutte</option>
+          <option value="stabile">stabile</option>
+          <option value="variabile">variabile</option>
+          <option value="incostante">incostante</option>
+        </select>
+        <div class="msdrop" id="scnFHitDrop">
+          <button type="button" class="msdrop-btn" onclick="toggleMsDrop('scnFHitDrop')">Hit venue: tutte ▾</button>
+          <div class="msdrop-panel">
+            <label><input type="checkbox" class="scnFHitChk" value="0-59" /> sotto 60%</label>
+            <label><input type="checkbox" class="scnFHitChk" value="60-74" /> 60–74%</label>
+            <label><input type="checkbox" class="scnFHitChk" value="75-89" /> 75–89%</label>
+            <label><input type="checkbox" class="scnFHitChk" value="90-100" /> 90–100%</label>
+          </div>
+        </div>
+        <div class="msdrop" id="scnFEdgeDrop">
+          <button type="button" class="msdrop-btn" onclick="toggleMsDrop('scnFEdgeDrop')">Edge: tutti ▾</button>
+          <div class="msdrop-panel">
+            <label><input type="checkbox" class="scnFEdgeChk" value="neg" /> negativo</label>
+            <label><input type="checkbox" class="scnFEdgeChk" value="0-9" /> 0–9pp</label>
+            <label><input type="checkbox" class="scnFEdgeChk" value="10-19" /> 10–19pp</label>
+            <label><input type="checkbox" class="scnFEdgeChk" value="20-999" /> 20pp+</label>
+          </div>
+        </div>
+        <div class="msdrop" id="scnFEvDrop">
+          <button type="button" class="msdrop-btn" onclick="toggleMsDrop('scnFEvDrop')">EV: tutti ▾</button>
+          <div class="msdrop-panel">
+            <label><input type="checkbox" class="scnFEvChk" value="neg" /> negativo</label>
+            <label><input type="checkbox" class="scnFEvChk" value="0-0.19" /> 0–0,19€</label>
+            <label><input type="checkbox" class="scnFEvChk" value="0.2-0.49" /> 0,20–0,49€</label>
+            <label><input type="checkbox" class="scnFEvChk" value="0.5-999" /> 0,50€+</label>
+          </div>
+        </div>
+        <div class="msdrop" id="scnFQuotaDrop">
+          <button type="button" class="msdrop-btn" onclick="toggleMsDrop('scnFQuotaDrop')">Quota: tutte ▾</button>
+          <div class="msdrop-panel">
+            <label><input type="checkbox" class="scnFQuotaChk" value="1.00-1.20" /> 1.00–1.20</label>
+            <label><input type="checkbox" class="scnFQuotaChk" value="1.21-1.40" /> 1.21–1.40</label>
+            <label><input type="checkbox" class="scnFQuotaChk" value="1.41-1.60" /> 1.41–1.60</label>
+            <label><input type="checkbox" class="scnFQuotaChk" value="1.61-1.80" /> 1.61–1.80</label>
+            <label><input type="checkbox" class="scnFQuotaChk" value="1.81-2.00" /> 1.81–2.00</label>
+            <label><input type="checkbox" class="scnFQuotaChk" value="2.01-2.50" /> 2.01–2.50</label>
+            <label><input type="checkbox" class="scnFQuotaChk" value="2.51-999" /> 2.51+</label>
+          </div>
+        </div>
+        <button id="scnFClear" class="secondary">Pulisci filtri</button>
+      </div>
+
+      <div style="overflow-x:auto;">
+      <table class="stat" id="scnTable" style="margin-top:14px;width:100%;">
+        <thead>
+          <tr>
+            <th class="sortable" data-key="giocatore" title="Nome del giocatore e squadra">Giocatore<span class="arrow"></span></th>
+            <th title="La partita e se il giocatore gioca in casa o trasferta in quella gara">Partita / venue</th>
+            <th class="sortable" data-key="titolare" title="Dalla formazione salvata in Matchup Engine. ✓ titolare confermato · ✓⚠ titolare in formazione ipotetica · ✗ non in formazione · – nessuna formazione salvata per quella partita">Titolare<span class="arrow"></span></th>
+            <th class="sortable" data-key="mercato" title="La statistica su cui si basa la linea (tiri, tiri in porta, falli, cartellini)">Mercato<span class="arrow"></span></th>
+            <th class="num sortable" data-key="linea" title="La soglia Over da valutare (es. Over 1.5 = almeno 2)">Linea<span class="arrow"></span></th>
+            <th class="num sortable" data-key="mediaVenue" title="Media a partita in quel venue (casa o trasferta), nelle partite reali giocate lì">Media venue /90 (N)<span class="arrow"></span></th>
+            <th class="num sortable" data-key="mediaL3" title="Media nelle ultime 3 presenze giocate, qualunque venue — utile per vedere se il giocatore sta salendo o scendendo rispetto alla media stagionale">Media L3/90<span class="arrow"></span></th>
+            <th class="sortable" data-key="cv" title="Coefficiente di variazione: quanto oscilla la prestazione partita per partita. Sotto 0.5 = giocatore regolare, sopra 1 = molto incostante, anche con la stessa media">Consistenza<span class="arrow"></span></th>
+            <th class="num sortable" data-key="hitVenue" title="Quante volte, storicamente, in quel venue ha superato questa esatta linea. ± indica l'incertezza (intervallo di Wilson) dato il campione">Hit venue<span class="arrow"></span></th>
+            <th class="num sortable" data-key="hitStag" title="Come sopra ma su tutta la stagione, senza distinguere casa/trasferta">Hit stag.<span class="arrow"></span></th>
+            <th class="num sortable" data-key="quota" title="Scrivi qui la quota decimale del bookmaker per questa esatta giocata">Quota<span class="arrow"></span></th>
+            <th class="num sortable" data-key="prob" title="Probabilità implicita nella quota = 1 / quota">Prob. impl.<span class="arrow"></span></th>
+            <th class="num sortable" data-key="edge" title="Hit rate venue meno probabilità implicita. Positivo = il book paga più di quanto i tuoi dati suggeriscano probabile">Edge<span class="arrow"></span></th>
+            <th class="num sortable" data-key="ev" title="Valore atteso per 1€ puntato, usando l'hit rate venue come probabilità reale: (hit rate × quota) − 1. Positivo = scommessa a valore nel lungo periodo">EV /1€<span class="arrow"></span></th>
+            <th title="Salva questa giocata nella tabella Preferiti in fondo alla pagina">☆</th>
+          </tr>
+        </thead>
+        <tbody id="scnBody"></tbody>
+      </table>
+      </div>
+      <div class="subtle" id="scnEmpty">Scegli giornata, filtri e criterio, poi "Scansiona".</div>
+      <div class="subtle" style="margin-top:8px;">Venue sempre quello reale della partita (chi è casa/trasferta in quel match). "Media &gt; Linea" è il filtro più largo e più debole; "Hit rate" è più rigoroso — usa il primo per allargare la ricerca, il secondo prima di scrivere una quota. Clicca un'intestazione di colonna per ordinare. Clicca la stella per salvare una giocata tra i Preferiti.</div>
+    </div>
+  </div>
+</section>
+
+<section id="screenerSection" style="margin-top:24px;">
+  <div class="panel">
+    <h2>Preferiti <span class="tag">giocate salvate dallo Scanner con la stella — sopravvivono al cambio pagina</span></h2>
+    <div class="body">
+      <div class="filter-group" id="scrFilterPanel" style="margin-bottom:10px;background:var(--panel-2);padding:10px;border-radius:8px;">
+        <span class="filter-label">Filtra preferiti:</span>
+        <input type="text" id="scrFText" placeholder="cerca giocatore/partita" style="background:var(--panel);color:var(--text);border:1px solid var(--line);padding:5px 8px;border-radius:6px;width:170px;" />
+        <select id="scrFCV" style="background:var(--panel);color:var(--text);border:1px solid var(--line);padding:5px 8px;border-radius:6px;">
+          <option value="">Consistenza: tutte</option>
+          <option value="stabile">stabile</option>
+          <option value="variabile">variabile</option>
+          <option value="incostante">incostante</option>
+        </select>
+        <div class="msdrop" id="scrFHitDrop">
+          <button type="button" class="msdrop-btn" onclick="toggleMsDrop('scrFHitDrop')">Hit venue: tutte ▾</button>
+          <div class="msdrop-panel">
+            <label><input type="checkbox" class="scrFHitChk" value="0-59" /> sotto 60%</label>
+            <label><input type="checkbox" class="scrFHitChk" value="60-74" /> 60–74%</label>
+            <label><input type="checkbox" class="scrFHitChk" value="75-89" /> 75–89%</label>
+            <label><input type="checkbox" class="scrFHitChk" value="90-100" /> 90–100%</label>
+          </div>
+        </div>
+        <div class="msdrop" id="scrFEdgeDrop">
+          <button type="button" class="msdrop-btn" onclick="toggleMsDrop('scrFEdgeDrop')">Edge: tutti ▾</button>
+          <div class="msdrop-panel">
+            <label><input type="checkbox" class="scrFEdgeChk" value="neg" /> negativo</label>
+            <label><input type="checkbox" class="scrFEdgeChk" value="0-9" /> 0–9pp</label>
+            <label><input type="checkbox" class="scrFEdgeChk" value="10-19" /> 10–19pp</label>
+            <label><input type="checkbox" class="scrFEdgeChk" value="20-999" /> 20pp+</label>
+          </div>
+        </div>
+        <div class="msdrop" id="scrFEvDrop">
+          <button type="button" class="msdrop-btn" onclick="toggleMsDrop('scrFEvDrop')">EV: tutti ▾</button>
+          <div class="msdrop-panel">
+            <label><input type="checkbox" class="scrFEvChk" value="neg" /> negativo</label>
+            <label><input type="checkbox" class="scrFEvChk" value="0-0.19" /> 0–0,19€</label>
+            <label><input type="checkbox" class="scrFEvChk" value="0.2-0.49" /> 0,20–0,49€</label>
+            <label><input type="checkbox" class="scrFEvChk" value="0.5-999" /> 0,50€+</label>
+          </div>
+        </div>
+        <div class="msdrop" id="scrFQuotaDrop">
+          <button type="button" class="msdrop-btn" onclick="toggleMsDrop('scrFQuotaDrop')">Quota: tutte ▾</button>
+          <div class="msdrop-panel">
+            <label><input type="checkbox" class="scrFQuotaChk" value="1.00-1.20" /> 1.00–1.20</label>
+            <label><input type="checkbox" class="scrFQuotaChk" value="1.21-1.40" /> 1.21–1.40</label>
+            <label><input type="checkbox" class="scrFQuotaChk" value="1.41-1.60" /> 1.41–1.60</label>
+            <label><input type="checkbox" class="scrFQuotaChk" value="1.61-1.80" /> 1.61–1.80</label>
+            <label><input type="checkbox" class="scrFQuotaChk" value="1.81-2.00" /> 1.81–2.00</label>
+            <label><input type="checkbox" class="scrFQuotaChk" value="2.01-2.50" /> 2.01–2.50</label>
+            <label><input type="checkbox" class="scrFQuotaChk" value="2.51-999" /> 2.51+</label>
+          </div>
+        </div>
+        <select id="scrFEsito" style="background:var(--panel);color:var(--text);border:1px solid var(--line);padding:5px 8px;border-radius:6px;">
+          <option value="">Storico: tutte</option>
+          <option value="vinta">vinta</option>
+          <option value="persa">persa</option>
+          <option value="null">non verificata</option>
+        </select>
+        <button id="scrFClear" class="secondary">Pulisci filtri</button>
+      </div>
+      <div class="screener-form">
+        <button id="scrClear" class="secondary">Svuota tutti i preferiti</button>
+      </div>
+      <div style="overflow-x:auto;">
+      <table class="stat" id="scrTable" style="margin-top:14px;width:100%;">
+        <thead>
+          <tr>
+            <th class="sortable" data-key="giocatore">Giocatore<span class="arrow"></span></th>
+            <th class="sortable" data-key="mercato">Mercato<span class="arrow"></span></th>
+            <th class="num sortable" data-key="linea">Linea<span class="arrow"></span></th>
+            <th class="num sortable" data-key="mediaVenue">Media venue /90<span class="arrow"></span></th>
+            <th class="num sortable" data-key="mediaL3">Media L3 /90<span class="arrow"></span></th>
+            <th class="sortable" data-key="cv">Consistenza<span class="arrow"></span></th>
+            <th class="num sortable" data-key="hitStag">Hit stag.<span class="arrow"></span></th>
+            <th class="num sortable" data-key="hitVenue">Hit venue<span class="arrow"></span></th>
+            <th class="num sortable" data-key="quota">Quota<span class="arrow"></span></th>
+            <th class="num sortable" data-key="prob">Prob. impl.<span class="arrow"></span></th>
+            <th class="num sortable" data-key="edge">Edge<span class="arrow"></span></th>
+            <th class="num sortable" data-key="ev">EV /1€<span class="arrow"></span></th>
+            <th class="sortable" data-key="valutazione">Valutazione<span class="arrow"></span></th>
+            <th>Storico</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="scrBody"></tbody>
+      </table>
+      </div>
+      <div class="subtle" id="scrEmpty">Nessun preferito ancora. Vai su Scanner, scansiona una giornata e clicca la stella ☆ sulle giocate che ti interessano.</div>
+      <div class="subtle" id="scrSummary" style="margin-top:8px;color:var(--accent);"></div>
+      <div class="subtle" style="margin-top:8px;">*Senza quota inserita, "Favorevole/Sfavorevole" usa il criterio media &gt; linea — più debole dell'edge reale, che richiede la quota.</div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  Calcolo locale, nessun dato inviato altrove. Lo storico dello Screener è salvato nel browser (localStorage) — persiste tra visite, ma non si sincronizza tra dispositivi diversi.
+</footer>
+
+<script src="engine.js"></script>
+<script>
+let DB = null; // { rosters, teams, calendar, matchLog(indexed) }
+
+// Prossima giornata in base alla data odierna: la giornata della prima
+// partita con Data >= oggi. Se la stagione è finita, resta sull'ultima.
+function prossimaGiornata(calendar) {
+  const oggi = new Date().toISOString().slice(0, 10);
+  const future = calendar.filter((c) => c.Data >= oggi);
+  if (future.length) return Math.min(...future.map((c) => c.Giornata));
+  return Math.max(...calendar.map((c) => c.Giornata));
+}
+
+function toISO(v){
+  if (v == null) return null;
+  if (typeof v === 'number') {
+    // seriale Excel
+    const d = XLSX.SSF.parse_date_code(v);
+    if (!d) return null;
+    return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+  }
+  const s = String(v);
+  const m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[0] : s;
+}
+
+function sheetToRows(wb, name){
+  const ws = wb.Sheets[name];
+  if (!ws) return [];
+  return XLSX.utils.sheet_to_json(ws, { defval: null, raw: true });
+}
+
+function loadWorkbook(wb){
+  const rosters = sheetToRows(wb, 'ROSTERS').filter(r => r.Player_ID);
+  // tblTEAMS vive nello stesso foglio ROSTERS, colonne Q:U -> sheet_to_json
+  // con defval null include già quelle colonne come proprietà separate se
+  // presenti come intestazioni; le isoliamo per nome.
+  const teams = rosters
+    .map(r => ({ Team_ID: r.Team_ID, Squadra: r.Squadra }))
+    .filter(r => r.Team_ID);
+  const calendarRaw = sheetToRows(wb, 'CALENDAR').filter(r => r.Match_ID);
+  const calendar = calendarRaw.map(r => ({ ...r, Data: toISO(r.Data) }));
+  const matchLogRaw = sheetToRows(wb, 'MATCH_LOG').filter(r => r.Match_ID);
+  const matchLog = matchLogRaw.map(r => ({ ...r, Data: toISO(r.Data) }));
+
+  DB = {
+    rosters,
+    calendar,
+    matchLog: buildIndexes(matchLog),
+  };
+  document.getElementById('dataStatus').textContent =
+    `${rosters.length} giocatori · ${calendar.length} partite · ${matchLog.length} presenze`;
+  populateGiornate();
+}
+
+function loadFromJSON(D){
+  const rosters = D.rosters.filter(r => r.Player_ID);
+  const calendar = D.calendar.filter(r => r.Match_ID);
+  const matchLog = D.match_log.filter(r => r.Match_ID);
+  DB = {
+    rosters,
+    calendar,
+    matchLog: buildIndexes(matchLog),
+  };
+  document.getElementById('dataStatus').textContent =
+    `${rosters.length} giocatori · ${calendar.length} partite · ${matchLog.length} presenze (dati inclusi)`;
+  populateGiornate();
+}
+
+// Al caricamento della pagina, prova a leggere data.json dalla stessa cartella
+// (funziona su GitHub Pages; su file:// locale il browser blocca il fetch e
+// resta il caricamento manuale del pulsante qui sotto).
+window.addEventListener('DOMContentLoaded', () => {
+  if (typeof fetch !== 'function') return;
+  fetch('./data.json')
+    .then(r => { if (!r.ok) throw new Error('no data.json'); return r.json(); })
+    .then(loadFromJSON)
+    .catch(() => { /* nessun data.json: si resta in attesa di upload manuale */ });
+});
+
+document.getElementById('fileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  document.getElementById('dataStatus').textContent = 'lettura file…';
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const wb = XLSX.read(ev.target.result, { type: 'array', cellDates: false });
+    loadWorkbook(wb);
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+// ---------------------------------------------------------------------------
+// Selettori a cascata: Giornata -> Partita -> Giocatore
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Selettori a cascata (Giornata -> Partita -> Giocatore): servono solo per il
+// Popola le giornate per lo Scanner — non serve più altro selettore, il
+// vecchio form manuale dello Screener è stato sostituito dal pulsante
+// stella direttamente sulle righe scansionate.
+// ---------------------------------------------------------------------------
+function populateGiornate(){
+  const giornate = [...new Set(DB.calendar.map(r => r.Giornata))].sort((a,b)=>a-b);
+  const auto = prossimaGiornata(DB.calendar);
+  const scnSel = document.getElementById('scnGiornata');
+  scnSel.innerHTML = giornate.map(g => `<option value="${g}">Giornata ${g}</option>`).join('');
+  scnSel.onchange = populateScnMatch;
+  if (giornate.includes(auto)) scnSel.value = String(auto);
+  populateScnMatch();
+}
+function populateScnMatch(){
+  const g = Number(document.getElementById('scnGiornata').value);
+  const matches = DB.calendar.filter(r => r.Giornata === g);
+  const sel = document.getElementById('scnMatch');
+  sel.innerHTML = '<option value="ALL">Tutte le partite</option>' +
+    matches.map(m => `<option value="${m.Match_ID}">${m.Home} – ${m.Away}</option>`).join('');
+}
+
+function fmt(v, d=2){
+  if (v === null || v === undefined || Number.isNaN(v)) return '—';
+  if (typeof v !== 'number') return v;
+  return v.toFixed(d).replace(/\.00$/, '');
+}
+function pct(v){ return v == null ? '—' : (v*100).toFixed(0) + '%'; }
+// Colora una percentuale per fascia (lime alta, rosso bassa, normale in mezzo)
+function pctColorClass(v){
+  if (v == null) return '';
+  if (v >= 0.7) return 'rank';
+  if (v <= 0.3) return 'rank-bad';
+  return '';
+}
+function pctColored(v){ return `<span class="${pctColorClass(v)}">${pct(v)}</span>`; }
+// Evidenzia il dato chiave (hit rate) come chip pieno, colorato per fascia —
+// lime ≥95%, ambra 80-94%, grigio sotto 80% (incluso quando non calcolabile).
+function hitChip(v){
+  if (v == null) return '<span class="subtle">—</span>';
+  const cls = v >= 0.95 ? '' : v >= 0.80 ? 'warn' : 'flat';
+  return `<span class="chip ${cls}">${pct(v)}</span>`;
+}
+
+const MARKET_LINES = {
+  TIRI: [
+    [0.5, 'Tiri_90', 'Hit_Tiri_1', 'Tiri_CV'],
+    [1.5, 'Tiri_90', 'Hit_Tiri_2', 'Tiri_CV'],
+    [2.5, 'Tiri_90', 'Hit_Tiri_3', 'Tiri_CV'],
+    [3.5, 'Tiri_90', 'Hit_Tiri_4', 'Tiri_CV'],
+  ],
+  TIRI_IN_PORTA: [
+    [0.5, 'SOT_90', 'Hit_SOT_1', 'SOT_CV'],
+    [1.5, 'SOT_90', 'Hit_SOT_2', 'SOT_CV'],
+    [2.5, 'SOT_90', 'Hit_SOT_3', 'SOT_CV'],
+  ],
+  FALLI_COMMESSI: [
+    [0.5, 'FC_90', 'Hit_FC_1', 'FC_CV'],
+    [1.5, 'FC_90', 'Hit_FC_2', 'FC_CV'],
+    [2.5, 'FC_90', 'Hit_FC_3', 'FC_CV'],
+  ],
+  FALLI_SUBITI: [
+    [0.5, 'FD_90', 'Hit_FD_1', 'FD_CV'],
+    [1.5, 'FD_90', 'Hit_FD_2', 'FD_CV'],
+    [2.5, 'FD_90', 'Hit_FD_3', 'FD_CV'],
+  ],
+  CARTELLINO: [[0.5, 'Cartellini_90', 'Hit_Cart_1', 'Cart_CV']],
+};
+// Consistenza: CV = deviazione standard / media sul conteggio a partita.
+// Sotto 0.5 = giocatore regolare; 0.5-1 = variabile; sopra 1 = molto incostante.
+function cvBadge(cv){
+  if (cv == null) return '<span class="subtle">—</span>';
+  if (cv < 0.5) return `<span class="status-pill status-OK">stabile ${cv.toFixed(2)}</span>`;
+  if (cv < 1) return `<span class="status-pill status-CAMPIONE">variabile ${cv.toFixed(2)}</span>`;
+  return `<span class="status-pill status-NO">incostante ${cv.toFixed(2)}</span>`;
+}
+const MARKET_LABELS = {
+  TIRI: 'Tiri', TIRI_IN_PORTA: 'Tiri in porta', FALLI_COMMESSI: 'Falli commessi',
+  FALLI_SUBITI: 'Falli subiti', CARTELLINO: 'Cartellino',
+};
+
+// ---------------------------------------------------------------------------
+// SCANNER GIORNATA — passa su tutti i giocatori attivi di tutte le partite di
+// una giornata. Filtri: quali mercati, quali linee, quale criterio (Media o
+// Hit rate). Il venue di ogni giocatore è SEMPRE quello della partita
+// scansionata (Home_ID/Away_ID di quel match), mai un valore di comodo —
+// verificato. La quota si scrive direttamente in tabella: calcola probabilità
+// implicita ed edge rispetto all'hit rate reale. Colonne ordinabili cliccando
+// l'intestazione; il pulsante Scarica Excel esporta esattamente quello che è
+// in tabella, con l'ordinamento corrente.
+// ---------------------------------------------------------------------------
+let scanResults = [];
+const SCAN_QUOTES_KEY = 'sa_scan_quotes_v1';
+function loadScanQuotes(){
+  try { const raw = localStorage.getItem(SCAN_QUOTES_KEY); return raw ? JSON.parse(raw) : {}; }
+  catch (e) { return {}; }
+}
+function saveScanQuotes(){
+  try { localStorage.setItem(SCAN_QUOTES_KEY, JSON.stringify(scanQuotes)); }
+  catch (e) { /* storage non disponibile: le quote restano solo in sessione */ }
+}
+const scanQuotes = loadScanQuotes(); // chiave riga -> quota inserita, persiste tra ricariche e nuove scansioni
+let sortState = { key: null, dir: 1 };
+
+function scanRowKey(r){
+  return `${r.player.Player_ID}|${r.match.Match_ID}|${r.mercato}|${r.linea}`;
+}
+
+document.getElementById('scnCriterio').addEventListener('change', () => {
+  const isHit = document.getElementById('scnCriterio').value === 'HIT';
+  document.getElementById('scnMinHitWrap').style.display = isHit ? 'inline-block' : 'none';
+});
+
+function getCheckedValues(selector){
+  return [...document.querySelectorAll(selector)].filter(c => c.checked).map(c => c.value);
+}
+
+// ---------------------------------------------------------------------------
+// FORMAZIONI da Matchup Engine: stessa tabella Supabase "formazioni" e stessa
+// chiave locale "lineup_v2_<partita>" (stessa origine, quindi condivisa).
+// Vince la versione piu' recente (campo ts / updated_at), come nel Matchup Engine.
+// Stati riga: Y titolare in formazione confermata · Yh titolare in formazione
+// ipotetica · N non in formazione · U nessuna formazione salvata per la partita.
+// Non uso mai la "stima" automatica: se non hai salvato nulla resta U (–).
+// ---------------------------------------------------------------------------
+let LUMAP = {}; // matchId -> { teamId: { ids:Set, confirmed, ts } }
+function luReadLocal(matchId){
+  const out = {};
+  try {
+    const o = JSON.parse(localStorage.getItem('lineup_v2_' + matchId) || '{}') || {};
+    for (const t of Object.keys(o)) {
+      const x = o[t];
+      if (x && Array.isArray(x.ids) && x.ids.length) out[t] = { ids: new Set(x.ids), confirmed: !!x.confirmed, ts: x.ts || 0 };
+    }
+  } catch (e) { /* storage non disponibile */ }
+  return out;
+}
+async function loadLineups(matchIds){
+  const map = {};
+  for (const id of matchIds) map[id] = luReadLocal(id);
+  if (sb && matchIds.length) {
+    try {
+      const { data, error } = await sb.from('formazioni').select('match_id, team_id, starters, confirmed, updated_at').in('match_id', matchIds);
+      if (error) throw error;
+      for (const row of data || []) {
+        if (!map[row.match_id] || !Array.isArray(row.starters) || !row.starters.length) continue;
+        const ts = Date.parse(row.updated_at) || 0;
+        const cur = map[row.match_id][row.team_id];
+        if (!cur || ts > cur.ts) map[row.match_id][row.team_id] = { ids: new Set(row.starters), confirmed: !!row.confirmed, ts };
+      }
+    } catch (e) { console.warn('Supabase: formazioni non lette, uso solo quelle locali.', e); }
+  }
+  LUMAP = map;
+}
+function lineupState(r){
+  const t = (LUMAP[r.match.Match_ID] || {})[r.player.Team_ID_Rif];
+  if (!t) return 'U';
+  if (!t.ids.has(r.player.Player_ID)) return 'N';
+  return t.confirmed ? 'Y' : 'Yh';
+}
+function lineupBadge(r){
+  const st = lineupState(r);
+  if (st === 'Y') return '<span class="verdict-fav" title="Titolare in formazione confermata">✓</span>';
+  if (st === 'Yh') return '<span class="verdict-fav" title="Titolare in formazione ipotetica (non ancora confermata)">✓<span style="color:var(--warn,#d9a441)">⚠</span></span>';
+  if (st === 'N') return '<span class="verdict-nofav" title="Non è tra i titolari della formazione salvata">✗</span>';
+  return '<span class="subtle" title="Nessuna formazione salvata in Matchup Engine per questa partita">–</span>';
+}
+async function refreshLineups(){
+  if (!scanResults.length) return;
+  await loadLineups([...new Set(scanResults.map(r => r.match.Match_ID))]);
+  renderScan();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshLineups(); });
+
+function runScanGiornata(){
+  if (!DB) return;
+  const giornata = Number(document.getElementById('scnGiornata').value);
+  const mercatiScelti = getCheckedValues('.scnMercatoChk');
+  const lineeScelte = getCheckedValues('.scnLineaChk').map(Number);
+  const criterio = document.getElementById('scnCriterio').value; // 'MEDIA' | 'HIT'
+  const minHit = Number(document.getElementById('scnMinHit').value);
+  const minN = Number(document.getElementById('scnMinN').value);
+  const matchFilter = document.getElementById('scnMatch').value;
+
+  let matches = DB.calendar.filter(m => m.Giornata === giornata);
+  if (matchFilter !== 'ALL') matches = matches.filter(m => m.Match_ID === matchFilter);
+  const results = [];
+
+  for (const match of matches) {
+    for (const [venue, teamId] of [['HOME', match.Home_ID], ['AWAY', match.Away_ID]]) {
+      const players = DB.rosters.filter(p => p.Attivo_SerieA === 'SI' && p.Team_ID_Rif === teamId);
+      for (const player of players) {
+        const pTot = computePlayerStats(DB.matchLog, player.Player_ID, 'TOTALE', null, teamId);
+        const pVenue = computePlayerStats(DB.matchLog, player.Player_ID, venue, null, teamId);
+        if (pVenue.Partite < minN) continue;
+        for (const mercato of mercatiScelti) {
+          for (const [linea, avgKey, hitKey, cvKey] of MARKET_LINES[mercato]) {
+            if (!lineeScelte.includes(linea)) continue;
+            const hitV = pVenue[hitKey];
+            const mediaV = pVenue[avgKey];
+            let pass;
+            if (criterio === 'MEDIA') pass = mediaV != null && mediaV > linea;
+            else pass = hitV != null && hitV >= minHit;
+            if (!pass) continue;
+            results.push({
+              player, match, venue, mercato, linea, avgKey, hitKey, cvKey,
+              hitVenue: hitV, hitStag: pTot[hitKey],
+              mediaVenue: mediaV, mediaStag: pTot[avgKey],
+              mediaL3: pTot['L3_' + avgKey],
+              cv: pVenue[cvKey],
+              nVenue: pVenue.Partite,
+            });
+          }
+        }
+      }
+    }
+  }
+  scanResults = results;
+  sortState = { key: 'hitVenue', dir: -1 };
+  applySortAndRender();
+  refreshLineups(); // formazioni salvate in Matchup Engine: aggiorna colonna Titolare
+}
+document.getElementById('scnRun').addEventListener('click', runScanGiornata);
+
+// Bug corretto (18/10): prima qui si chiamava renderScan(), che ricostruisce
+// TUTTA la tabella (body.innerHTML = ...) e quindi distrugge e ricrea ogni
+// singolo campo quota — incluso quello su cui stavi scrivendo in un'altra
+// riga nello stesso istante. Inserendo due quote di fila rapidamente, la
+// seconda poteva perdersi perché il suo campo veniva rimpiazzato da uno
+// vuoto proprio mentre ci si stava scrivendo dentro (prima che scattasse il
+// suo "onchange"). Ora si aggiornano SOLO le 3 celle derivate (probabilità,
+// edge, valore atteso) della riga appena modificata — tutte le altre righe,
+// e i loro campi quota eventualmente in corso di digitazione, restano intatte.
+function scnSetQuota(i, val){
+  const r = scanResults[i];
+  // Se un filtro su quota/edge/valore atteso è attivo, inserire una quota può
+  // far entrare o uscire questa riga dall'elenco filtrato — in quel caso solo
+  // patchare le celle non basta, serve il ridisegno completo (vecchio
+  // comportamento, usato però solo quando serve davvero).
+  const eraFiltrataPrima = applyScnFilters([r]).length > 0;
+
+  const q = Number(val.replace(',', '.'));
+  const key = scanRowKey(r);
+  scanQuotes[key] = (val === '' || Number.isNaN(q) || q <= 1) ? null : q;
+  saveScanQuotes();
+  quoteCloudSave(key, scanQuotes[key]);
+
+  const eFiltrataDopo = applyScnFilters([r]).length > 0;
+  if (eraFiltrataPrima !== eFiltrataDopo) {
+    renderScan(); // la riga deve apparire/scomparire: serve il ridisegno pieno
+    return;
+  }
+
+  // Caso comune: la riga resta visibile esattamente dov'era — aggiorno solo
+  // le 3 celle derivate di QUESTA riga. Non tocco il resto della tabella, così
+  // un campo quota su cui si sta scrivendo in un'altra riga non viene distrutto
+  // (bug corretto il 18/10: prima qui si chiamava sempre renderScan(), che
+  // ricostruisce l'intero corpo tabella con body.innerHTML = ... e quindi
+  // cancellava anche quote digitate in altre righe nello stesso istante).
+  const { prob, edge, ev } = derived(r);
+  const probEl = document.getElementById('scnProb-' + i);
+  const edgeEl = document.getElementById('scnEdge-' + i);
+  const evEl = document.getElementById('scnEv-' + i);
+  if (probEl) probEl.textContent = prob != null ? pct(prob) : '—';
+  if (edgeEl) {
+    edgeEl.textContent = edge != null ? (edge > 0 ? '+' : '') + (edge * 100).toFixed(1) + 'pp' : '—';
+    edgeEl.className = 'num' + (edge != null && edge > 0 ? ' verdict-fav' : (edge != null ? ' verdict-nofav' : ''));
+  }
+  if (evEl) {
+    evEl.textContent = ev != null ? (ev > 0 ? '+' : '') + ev.toFixed(2) + '€' : '—';
+    evEl.className = 'num' + (ev != null && ev > 0 ? ' verdict-fav' : (ev != null ? ' verdict-nofav' : ''));
+  }
+}
+
+// Valori derivati (prob/edge) dipendono dalla quota inserita, che può cambiare
+// senza rilanciare la scansione — calcolati al volo per riga.
+function derived(r){
+  const key = scanRowKey(r);
+  const quota = scanQuotes[key] ?? null;
+  const prob = quota ? 1 / quota : null;
+  const edge = (prob != null && r.hitVenue != null) ? r.hitVenue - prob : null;
+  const ev = (quota && r.hitVenue != null) ? (r.hitVenue * quota - 1) : null;
+  return { quota, prob, edge, ev };
+}
+
+const SORT_ACCESSORS = {
+  giocatore: r => r.player.Nome_completo,
+  titolare: r => ({ Y: 3, Yh: 2, U: 1, N: 0 })[lineupState(r)],
+  mercato: r => MARKET_LABELS[r.mercato],
+  linea: r => r.linea,
+  mediaVenue: r => r.mediaVenue ?? -Infinity,
+  mediaL3: r => r.mediaL3 ?? -Infinity,
+  cv: r => r.cv ?? Infinity, // incostante in fondo quando si ordina "meno instabile prima"
+  hitVenue: r => r.hitVenue ?? -Infinity,
+  hitStag: r => r.hitStag ?? -Infinity,
+  quota: r => derived(r).quota ?? -Infinity,
+  prob: r => derived(r).prob ?? -Infinity,
+  edge: r => derived(r).edge ?? -Infinity,
+  ev: r => derived(r).ev ?? -Infinity,
+};
+
+// Chiave stabile per una riga scansionata: identifica la stessa giocata
+// (giocatore + mercato + linea + partita) indipendentemente dall'ordine o
+// dal fatto che la scansione sia stata rilanciata — serve per sapere se è
+// già tra i preferiti e per non salvarla due volte.
+function favKeyOf(r){ return `${r.player.Player_ID}|${r.mercato}|${r.linea}|${r.match.Match_ID}`; }
+function isFavorited(r){ return screenerRows.some(x => x.favKey === favKeyOf(r)); }
+
+function cvLabel(cv){
+  if (cv == null) return null;
+  if (cv < 0.5) return 'stabile';
+  if (cv < 1) return 'variabile';
+  return 'incostante';
+}
+
+// Filtri Scanner: ognuno opzionale, si combinano con AND — lasciarli vuoti
+// non esclude nulla.
+// Interpreta un valore "min-max" (es. "60-74", "20-999", "neg") in un
+// intervallo numerico [min, max]. "neg" = qualunque valore sotto zero.
+// value vuoto = nessun filtro (torna null).
+// Menu a tendina multi-selezione: si apre/chiude come un select normale, ma
+// dentro ci sono checkbox per poter spuntare più intervalli insieme. Un solo
+// pannello aperto alla volta; click fuori lo richiude senza perdere le
+// spunte già fatte.
+function toggleMsDrop(id){
+  const target = document.querySelector('#' + id + ' .msdrop-panel');
+  const wasOpen = target.classList.contains('open');
+  document.querySelectorAll('.msdrop-panel.open').forEach(p => p.classList.remove('open'));
+  if (!wasOpen) target.classList.add('open');
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.msdrop')) {
+    document.querySelectorAll('.msdrop-panel.open').forEach(p => p.classList.remove('open'));
+  }
+});
+// Aggiorna il testo del pulsante ("Hit venue: tutte" -> "Hit venue: 2 selez.")
+// e lo evidenzia quando il filtro è attivo, così si vede a colpo d'occhio
+// quali tendine hanno un filtro impostato senza doverle aprire.
+function updateMsDropLabel(dropId, baseLabel, checkboxSelector){
+  const n = getCheckedValues(checkboxSelector).length;
+  const btn = document.querySelector('#' + dropId + ' .msdrop-btn');
+  btn.textContent = (n ? `${baseLabel}: ${n} selez.` : `${baseLabel}: tutte`) + ' ▾';
+  btn.classList.toggle('active-filter', n > 0);
+}
+
+// Interpreta un valore "min-max" (es. "60-74") o "neg" in un intervallo
+// numerico [min, max]. Usato per trasformare le caselle spuntate in bucket.
+function parseBucket(value){
+  if (value === 'neg') return [-Infinity, -0.0001];
+  const [lo, hi] = value.split('-').map(Number);
+  return [lo, hi];
+}
+// Tutti i bucket delle caselle spuntate per una categoria di filtro. Nessuna
+// spuntata = nessun filtro su quella categoria (array vuoto).
+function bucketsFromChecked(selector){
+  return getCheckedValues(selector).map(parseBucket);
+}
+// Vero se il valore cade in ALMENO UNO dei bucket spuntati (OR tra le
+// caselle della stessa categoria) — nessuna spuntata = passa sempre.
+function inAnyBucket(val, buckets){
+  if (!buckets.length) return true;
+  if (val == null) return false;
+  return buckets.some(b => val >= b[0] && val <= b[1]);
+}
+
+// Filtri Scanner: ogni categoria (testo, consistenza, hit, edge, ev, quota)
+// è opzionale e si combina con le altre in AND; dentro la stessa categoria
+// più caselle spuntate si combinano in OR (es. "60–74%" o "90–100%" insieme).
+function scnFilters(){
+  return {
+    text: (document.getElementById('scnFText').value || '').trim().toLowerCase(),
+    cv: document.getElementById('scnFCV').value,
+    hitBuckets: bucketsFromChecked('.scnFHitChk'),
+    edgeBuckets: bucketsFromChecked('.scnFEdgeChk'),
+    evBuckets: bucketsFromChecked('.scnFEvChk'),
+    quotaBuckets: bucketsFromChecked('.scnFQuotaChk'),
+    venue: getScnVenue(),
+    tit: document.getElementById('scnFTit').value,
+  };
+}
+function applyScnFilters(rows){
+  const f = scnFilters();
+  return rows.filter(r => {
+    if (f.venue && r.venue !== f.venue) return false;
+    if (f.tit) {
+      const st = lineupState(r);
+      if (f.tit === 'tit' && st !== 'Y' && st !== 'Yh') return false;
+      if (f.tit === 'conf' && st !== 'Y') return false;
+      if (f.tit === 'notN' && st === 'N') return false;
+    }
+    if (f.text) {
+      const hay = `${r.player.Nome_completo} ${r.match.Home} ${r.match.Away}`.toLowerCase();
+      if (!hay.includes(f.text)) return false;
+    }
+    if (f.cv && cvLabel(r.cv) !== f.cv) return false;
+    if (!inAnyBucket(r.hitVenue != null ? r.hitVenue * 100 : null, f.hitBuckets)) return false;
+    const { quota, edge, ev } = derived(r);
+    if (!inAnyBucket(edge != null ? edge * 100 : null, f.edgeBuckets)) return false;
+    if (!inAnyBucket(ev, f.evBuckets)) return false;
+    if (!inAnyBucket(quota, f.quotaBuckets)) return false;
+    return true;
+  });
+}
+// Filtro Squadra (Casa/Trasferta/Complessivo): tiene solo i giocatori della
+// squadra di casa o ospite della partita scansionata. Complessivo = nessun
+// filtro (default).
+function getScnVenue(){
+  const c = document.querySelector('.scnFVenueRad:checked');
+  return c ? c.value : '';
+}
+function updateScnVenueLabel(){
+  const v = getScnVenue();
+  const btn = document.querySelector('#scnFVenueDrop .msdrop-btn');
+  const name = v === 'HOME' ? 'casa' : v === 'AWAY' ? 'trasferta' : 'complessivo';
+  btn.textContent = `Squadra: ${name} ▾`;
+  btn.classList.toggle('active-filter', v !== '');
+}
+document.querySelectorAll('.scnFVenueRad').forEach(r => r.addEventListener('change', () => { updateScnVenueLabel(); renderScan(); }));
+document.getElementById('scnFText').addEventListener('input', renderScan);
+document.getElementById('scnFCV').addEventListener('change', renderScan);
+document.getElementById('scnFTit').addEventListener('change', renderScan);
+document.querySelectorAll('.scnFHitChk').forEach(chk => chk.addEventListener('change', () => { updateMsDropLabel('scnFHitDrop','Hit venue','.scnFHitChk'); renderScan(); }));
+document.querySelectorAll('.scnFEdgeChk').forEach(chk => chk.addEventListener('change', () => { updateMsDropLabel('scnFEdgeDrop','Edge','.scnFEdgeChk'); renderScan(); }));
+document.querySelectorAll('.scnFEvChk').forEach(chk => chk.addEventListener('change', () => { updateMsDropLabel('scnFEvDrop','EV','.scnFEvChk'); renderScan(); }));
+document.querySelectorAll('.scnFQuotaChk').forEach(chk => chk.addEventListener('change', () => { updateMsDropLabel('scnFQuotaDrop','Quota','.scnFQuotaChk'); renderScan(); }));
+document.getElementById('scnFClear').addEventListener('click', () => {
+  document.getElementById('scnFText').value = '';
+  document.getElementById('scnFCV').value = '';
+  document.getElementById('scnFTit').value = '';
+  document.querySelector('.scnFVenueRad[value=""]').checked = true;
+  updateScnVenueLabel();
+  document.querySelectorAll('.scnFHitChk,.scnFEdgeChk,.scnFEvChk,.scnFQuotaChk').forEach(chk => { chk.checked = false; });
+  updateMsDropLabel('scnFHitDrop','Hit venue','.scnFHitChk');
+  updateMsDropLabel('scnFEdgeDrop','Edge','.scnFEdgeChk');
+  updateMsDropLabel('scnFEvDrop','EV','.scnFEvChk');
+  updateMsDropLabel('scnFQuotaDrop','Quota','.scnFQuotaChk');
+  renderScan();
+});
+
+function applySortAndRender(){
+  if (sortState.key) {
+    const acc = SORT_ACCESSORS[sortState.key];
+    scanResults = [...scanResults].sort((a, b) => {
+      const va = acc(a), vb = acc(b);
+      if (va < vb) return -1 * sortState.dir;
+      if (va > vb) return 1 * sortState.dir;
+      return 0;
+    });
+  }
+  renderScan();
+  updateSortArrows();
+}
+
+function updateSortArrows(){
+  document.querySelectorAll('#scnTable th.sortable').forEach(th => {
+    const arrow = th.querySelector('.arrow');
+    if (th.dataset.key === sortState.key) {
+      arrow.textContent = sortState.dir === 1 ? '▲' : '▼';
+    } else {
+      arrow.textContent = '';
+    }
+  });
+}
+
+document.querySelectorAll('#scnTable th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (sortState.key === key) sortState.dir *= -1;
+    else sortState = { key, dir: 1 };
+    applySortAndRender();
+  });
+});
+
+function renderScan(){
+  const body = document.getElementById('scnBody');
+  const empty = document.getElementById('scnEmpty');
+  const filtered = applyScnFilters(scanResults);
+  if (!scanResults.length){
+    body.innerHTML = '';
+    empty.style.display = 'block';
+    empty.textContent = DB ? 'Nessun caso trovato con questi filtri per questa giornata.' : 'Scegli giornata, filtri e criterio, poi "Scansiona".';
+    return;
+  }
+  if (!filtered.length){
+    body.innerHTML = '';
+    empty.style.display = 'block';
+    empty.textContent = 'Nessuna riga soddisfa i filtri impostati sopra.';
+    return;
+  }
+  empty.style.display = 'none';
+  body.innerHTML = filtered.map((r) => {
+    const i = scanResults.indexOf(r);
+    const { quota, prob, edge, ev } = derived(r);
+    const [lo, hi] = wilsonInterval(r.hitVenue, r.nVenue);
+    const ciTxt = (lo != null) ? `<span class="subtle">±${Math.round((hi - lo) / 2 * 100)}pp</span>` : '';
+    const fav = isFavorited(r);
+    return `<tr>
+    <td class="metricname">${r.player.Nome_completo}<div class="subtle">${r.player.Squadra_Rif} · ${r.player.Posizione_Analitica}</div></td>
+    <td>${r.match.Home} – ${r.match.Away}<div class="subtle">${r.venue.toLowerCase()}</div></td>
+    <td class="num">${lineupBadge(r)}</td>
+    <td>${MARKET_LABELS[r.mercato]}</td>
+    <td class="num">${fmt(r.linea,1)}</td>
+    <td class="num nw">${fmt(r.mediaVenue)} <span class="subtle">(N=${r.nVenue})</span></td>
+    <td class="num">${fmt(r.mediaL3)}</td>
+    <td>${cvBadge(r.cv)}</td>
+    <td class="num"><div class="hitcell">${hitChip(r.hitVenue)}${ciTxt}</div></td>
+    <td class="num">${pctColored(r.hitStag)}</td>
+    <td class="num"><input type="text" inputmode="decimal" placeholder="1.85" id="scnQuotaInput-${i}" value="${quota ?? ''}" style="width:60px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);padding:4px;" onchange="scnSetQuota(${i}, this.value)" /></td>
+    <td class="num" id="scnProb-${i}">${prob != null ? pct(prob) : '—'}</td>
+    <td class="num ${edge != null && edge > 0 ? 'verdict-fav' : (edge != null ? 'verdict-nofav' : '')}" id="scnEdge-${i}">${edge != null ? (edge>0?'+':'') + (edge*100).toFixed(1)+'pp' : '—'}</td>
+    <td class="num ${ev != null && ev > 0 ? 'verdict-fav' : (ev != null ? 'verdict-nofav' : '')}" id="scnEv-${i}">${ev != null ? (ev>0?'+':'') + ev.toFixed(2)+'€' : '—'}</td>
+    <td><button class="rowdel" style="color:var(--accent);font-size:16px;" title="${fav ? 'Rimuovi dai preferiti' : 'Salva tra i preferiti'}" onclick="toggleFavorite(${i})">${fav ? '★' : '☆'}</button></td>
+  </tr>`;
+  }).join('');
+}
+function toggleFavorite(i){
+  const r = scanResults[i];
+  if (!r) return;
+  const key = favKeyOf(r);
+  const existingIdx = screenerRows.findIndex(x => x.favKey === key);
+  if (existingIdx >= 0) {
+    const removedId = screenerRows[existingIdx].id;
+    screenerRows.splice(existingIdx, 1);
+    if (sb) {
+      sb.from('preferiti').delete().eq('id', String(removedId))
+        .then(({ error }) => { if (error) console.warn('Supabase: rimozione preferito non riuscita.', error); });
+    }
+  } else {
+    const { quota } = derived(r);
+    const nuovo = {
+      id: Date.now() + Math.random(),
+      favKey: key,
+      giornata: r.match.Giornata,
+      partita: `${r.match.Home} – ${r.match.Away}`,
+      giocatore: r.player.Nome_completo,
+      mercato: r.mercato, linea: r.linea, venue: r.venue,
+      mediaStag: r.mediaStag, mediaVenue: r.mediaVenue,
+      mediaL3: computePlayerStats(DB.matchLog, r.player.Player_ID, 'TOTALE', null, r.player.Team_ID_Rif)['L3_' + r.avgKey],
+      cv: r.cv,
+      hitStag: r.hitStag, hitVenue: r.hitVenue, nVenue: r.nVenue,
+      esito: null, quota,
+    };
+    screenerRows.push(nuovo);
+    if (sb) {
+      sb.from('preferiti').insert(scrRowToCloud(nuovo))
+        .then(({ error }) => { if (error) { syncState.pref = false; refreshSyncBadge(); console.warn('Supabase: salvataggio preferito non riuscito, resta solo su questo dispositivo.', error); } });
+    }
+  }
+  saveScreenerRows();
+  renderScan();
+  renderScreener();
+}
+
+document.getElementById('scnExport').addEventListener('click', () => {
+  if (!scanResults.length) return;
+  const rows = scanResults.map(r => {
+    const { quota, prob, edge } = derived(r);
+    return {
+      Giocatore: r.player.Nome_completo,
+      Squadra: r.player.Squadra_Rif,
+      Ruolo: r.player.Posizione_Analitica,
+      Partita: `${r.match.Home} - ${r.match.Away}`,
+      Giornata: r.match.Giornata,
+      Venue: r.venue,
+      Titolare: ({ Y: 'confermato', Yh: 'ipotetico', N: 'no', U: 'n/d' })[lineupState(r)],
+      Mercato: MARKET_LABELS[r.mercato],
+      Linea: r.linea,
+      'Media venue /90': r.mediaVenue,
+      'N venue': r.nVenue,
+      'Consistenza (CV)': r.cv,
+      'Hit venue': r.hitVenue,
+      'Hit stagione': r.hitStag,
+      Quota: quota,
+      'Prob. implicita': prob,
+      'Edge': edge,
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Scanner');
+  const giornata = document.getElementById('scnGiornata').value;
+  XLSX.writeFile(wb, `scanner_giornata_${giornata}.xlsx`);
+});
+
+const SCR_STORAGE_KEY = 'sa_screener_rows_v1';
+const SB_URL = 'https://bcvpqrxcdzzcnomlwtum.supabase.co';
+const SB_KEY = 'sb_publishable__rJ8XozGID78cfl0t4Fdmw_BoNP9A7k';
+const sb = (typeof window.supabase !== 'undefined') ? window.supabase.createClient(SB_URL, SB_KEY) : null;
+
+function loadScreenerRows(){
+  try {
+    const raw = localStorage.getItem(SCR_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+function saveScreenerRows(){
+  try { localStorage.setItem(SCR_STORAGE_KEY, JSON.stringify(screenerRows)); }
+  catch (e) { /* storage non disponibile: la lista resta solo in sessione */ }
+}
+
+// Conversione riga JS (camelCase) <-> riga tabella Supabase (snake_case).
+function scrRowToCloud(r){
+  return {
+    id: String(r.id), fav_key: r.favKey, giornata: r.giornata, partita: r.partita,
+    giocatore: r.giocatore, mercato: r.mercato, linea: r.linea, venue: r.venue,
+    media_stag: r.mediaStag, media_venue: r.mediaVenue, media_l3: r.mediaL3, cv: r.cv,
+    hit_stag: r.hitStag, hit_venue: r.hitVenue, n_venue: r.nVenue,
+    esito: r.esito, quota: r.quota,
+  };
+}
+function scrRowFromCloud(row){
+  return {
+    id: row.id, favKey: row.fav_key, giornata: row.giornata, partita: row.partita,
+    giocatore: row.giocatore, mercato: row.mercato, linea: row.linea, venue: row.venue,
+    mediaStag: row.media_stag, mediaVenue: row.media_venue, mediaL3: row.media_l3, cv: row.cv,
+    hitStag: row.hit_stag, hitVenue: row.hit_venue, nVenue: row.n_venue,
+    esito: row.esito, quota: row.quota,
+  };
+}
+// Scarica i preferiti salvati da altri dispositivi, una volta al
+// caricamento pagina. Se Supabase non risponde, resta valido solo il
+// localStorage — nessun blocco, nessun errore visibile all'utente.
+async function syncScreenerFromCloud(){
+  if (!sb) return;
+  try {
+    const { data, error } = await sb.from('preferiti').select('*').order('created_at', { ascending: true });
+    if (error) throw error;
+    if (data.length === 0 && screenerRows.length > 0) {
+      // Cloud vuoto ma preferiti locali presenti: li carico su, NON li cancello.
+      const { error: e2 } = await sb.from('preferiti').insert(screenerRows.map(scrRowToCloud));
+      if (e2) throw e2;
+    } else {
+      screenerRows = data.map(scrRowFromCloud);
+      saveScreenerRows();
+      renderScreener();
+    }
+    syncState.pref = true;
+  } catch (e) {
+    syncState.pref = false;
+    console.warn('Supabase: sincronizzazione preferiti non riuscita, resto sui dati locali.', e);
+  }
+  refreshSyncBadge();
+}
+
+// ---------------------------------------------------------------------------
+// Sincronizzazione cloud delle quote dello Scanner (tabella scanner_quote) e
+// indicatore di stato. Le quote locali non ancora nel cloud vengono caricate
+// al primo avvio; quelle già nel cloud vengono scaricate sul dispositivo.
+// ---------------------------------------------------------------------------
+const syncState = { quote: null, pref: null }; // null = in corso, true = ok, false = errore
+function refreshSyncBadge(){
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  const vals = [syncState.quote, syncState.pref];
+  if (vals.includes(false)) {
+    el.textContent = '⚠ cloud non raggiunto: dati solo su questo dispositivo' +
+      (syncState.quote === false ? ' (quote)' : '') + (syncState.pref === false ? ' (preferiti)' : '');
+    el.style.color = 'var(--warn)';
+  } else if (vals.every(v => v === true)) {
+    el.textContent = '☁ sincronizzato';
+    el.style.color = 'var(--accent)';
+  } else {
+    el.textContent = '☁ sincronizzazione…';
+    el.style.color = 'var(--muted)';
+  }
+}
+function quoteCloudSave(key, quota){
+  if (!sb) { syncState.quote = false; refreshSyncBadge(); return; }
+  const q = (quota == null)
+    ? sb.from('scanner_quote').delete().eq('chiave', key)
+    : sb.from('scanner_quote').upsert({ chiave: key, quota: quota, updated_at: new Date().toISOString() });
+  q.then(({ error }) => {
+    syncState.quote = !error;
+    if (error) console.warn('Supabase: salvataggio quota non riuscito, resta solo su questo dispositivo.', error);
+    refreshSyncBadge();
+  });
+}
+async function syncQuotesFromCloud(){
+  if (!sb) { syncState.quote = false; refreshSyncBadge(); return; }
+  try {
+    const { data, error } = await sb.from('scanner_quote').select('chiave,quota');
+    if (error) throw error;
+    const cloud = {};
+    data.forEach(r => { cloud[r.chiave] = Number(r.quota); });
+    const localOnly = Object.entries(scanQuotes).filter(([k, v]) => v != null && !(k in cloud));
+    if (localOnly.length) {
+      const { error: e2 } = await sb.from('scanner_quote').upsert(localOnly.map(([k, v]) => ({ chiave: k, quota: v })));
+      if (e2) throw e2;
+    }
+    Object.assign(scanQuotes, cloud);
+    saveScanQuotes();
+    syncState.quote = true;
+    renderScan();
+  } catch (e) {
+    syncState.quote = false;
+    console.warn('Supabase: sincronizzazione quote non riuscita, resto sui dati locali.', e);
+  }
+  refreshSyncBadge();
+}
+
+let screenerRows = loadScreenerRows();
+refreshSyncBadge();
+if (sb) { syncScreenerFromCloud(); syncQuotesFromCloud(); } else { syncState.quote = false; syncState.pref = false; refreshSyncBadge(); }
+
+document.getElementById('scrClear').addEventListener('click', () => {
+  if (!confirm('Svuotare tutti i preferiti, compreso lo storico esiti già segnati?')) return;
+  screenerRows = [];
+  saveScreenerRows();
+  renderScreener();
+  if (sb) {
+    sb.from('preferiti').delete().not('id', 'is', null)
+      .then(({ error }) => { if (error) console.warn('Supabase: svuotamento remoto non riuscito.', error); });
+  }
+});
+
+function scrSetEsito(id, esito){
+  const r = screenerRows.find(r => String(r.id) === String(id));
+  if (r) r.esito = (r.esito === esito) ? null : esito; // click di nuovo = annulla
+  saveScreenerRows();
+  renderScreener();
+  if (sb && r) {
+    sb.from('preferiti').update({ esito: r.esito }).eq('id', String(id))
+      .then(({ error }) => { if (error) console.warn('Supabase: aggiornamento esito non riuscito.', error); });
+  }
+}
+function scrSetQuota(id, val){
+  const r = screenerRows.find(r => String(r.id) === String(id));
+  if (!r) return;
+  const q = Number(String(val).replace(',', '.'));
+  r.quota = (val === '' || Number.isNaN(q) || q <= 1) ? null : q;
+  saveScreenerRows();
+  renderScreener();
+  if (sb) {
+    sb.from('preferiti').update({ quota: r.quota }).eq('id', String(id))
+      .then(({ error }) => { if (error) console.warn('Supabase: aggiornamento quota non riuscito.', error); });
+  }
+}
+function removeScrRow(id){
+  screenerRows = screenerRows.filter(r => String(r.id) !== String(id));
+  saveScreenerRows();
+  renderScreener();
+  if (sb) {
+    sb.from('preferiti').delete().eq('id', String(id))
+      .then(({ error }) => { if (error) console.warn('Supabase: rimozione preferito non riuscita.', error); });
+  }
+}
+
+function scrDerived(r){
+  const prob = r.quota ? 1 / r.quota : null;
+  const edge = (prob != null && r.hitVenue != null) ? r.hitVenue - prob : null;
+  const ev = (r.quota && r.hitVenue != null) ? (r.hitVenue * r.quota - 1) : null;
+  const hasQuota = r.quota != null;
+  const favorevole = hasQuota ? (edge != null && edge > 0) : (r.mediaVenue != null && r.mediaVenue > r.linea);
+  return { prob, edge, ev, hasQuota, favorevole };
+}
+
+const SCR_SORT_ACCESSORS = {
+  giocatore: r => r.giocatore,
+  mercato: r => MARKET_LABELS[r.mercato],
+  linea: r => r.linea,
+  mediaVenue: r => r.mediaVenue ?? -Infinity,
+  mediaL3: r => r.mediaL3 ?? -Infinity,
+  cv: r => r.cv ?? Infinity,
+  hitStag: r => r.hitStag ?? -Infinity,
+  hitVenue: r => r.hitVenue ?? -Infinity,
+  quota: r => r.quota ?? -Infinity,
+  prob: r => scrDerived(r).prob ?? -Infinity,
+  edge: r => scrDerived(r).edge ?? -Infinity,
+  ev: r => scrDerived(r).ev ?? -Infinity,
+  valutazione: r => (scrDerived(r).favorevole ? 1 : 0),
+};
+let scrSortState = { key: null, dir: 1 };
+
+function scrFilters(){
+  return {
+    text: (document.getElementById('scrFText').value || '').trim().toLowerCase(),
+    cv: document.getElementById('scrFCV').value,
+    hitBuckets: bucketsFromChecked('.scrFHitChk'),
+    edgeBuckets: bucketsFromChecked('.scrFEdgeChk'),
+    evBuckets: bucketsFromChecked('.scrFEvChk'),
+    quotaBuckets: bucketsFromChecked('.scrFQuotaChk'),
+    esito: document.getElementById('scrFEsito').value,
+  };
+}
+function applyScrFilters(rows){
+  const f = scrFilters();
+  return rows.filter(r => {
+    if (f.text) {
+      const hay = `${r.giocatore} ${r.partita}`.toLowerCase();
+      if (!hay.includes(f.text)) return false;
+    }
+    if (f.cv && cvLabel(r.cv) !== f.cv) return false;
+    if (!inAnyBucket(r.hitVenue != null ? r.hitVenue * 100 : null, f.hitBuckets)) return false;
+    const { edge, ev } = scrDerived(r);
+    if (!inAnyBucket(edge != null ? edge * 100 : null, f.edgeBuckets)) return false;
+    if (!inAnyBucket(ev, f.evBuckets)) return false;
+    if (!inAnyBucket(r.quota, f.quotaBuckets)) return false;
+    if (f.esito) {
+      if (f.esito === 'null') { if (r.esito != null) return false; }
+      else if (r.esito !== f.esito) return false;
+    }
+    return true;
+  });
+}
+document.getElementById('scrFText').addEventListener('input', renderScreener);
+document.getElementById('scrFCV').addEventListener('change', renderScreener);
+document.getElementById('scrFEsito').addEventListener('change', renderScreener);
+document.querySelectorAll('.scrFHitChk').forEach(chk => chk.addEventListener('change', () => { updateMsDropLabel('scrFHitDrop','Hit venue','.scrFHitChk'); renderScreener(); }));
+document.querySelectorAll('.scrFEdgeChk').forEach(chk => chk.addEventListener('change', () => { updateMsDropLabel('scrFEdgeDrop','Edge','.scrFEdgeChk'); renderScreener(); }));
+document.querySelectorAll('.scrFEvChk').forEach(chk => chk.addEventListener('change', () => { updateMsDropLabel('scrFEvDrop','EV','.scrFEvChk'); renderScreener(); }));
+document.querySelectorAll('.scrFQuotaChk').forEach(chk => chk.addEventListener('change', () => { updateMsDropLabel('scrFQuotaDrop','Quota','.scrFQuotaChk'); renderScreener(); }));
+document.getElementById('scrFClear').addEventListener('click', () => {
+  document.getElementById('scrFText').value = '';
+  document.getElementById('scrFCV').value = '';
+  document.getElementById('scrFEsito').value = '';
+  document.querySelectorAll('.scrFHitChk,.scrFEdgeChk,.scrFEvChk,.scrFQuotaChk').forEach(chk => { chk.checked = false; });
+  updateMsDropLabel('scrFHitDrop','Hit venue','.scrFHitChk');
+  updateMsDropLabel('scrFEdgeDrop','Edge','.scrFEdgeChk');
+  updateMsDropLabel('scrFEvDrop','EV','.scrFEvChk');
+  updateMsDropLabel('scrFQuotaDrop','Quota','.scrFQuotaChk');
+  renderScreener();
+});
+document.querySelectorAll('#scrTable th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (scrSortState.key === key) scrSortState.dir *= -1;
+    else scrSortState = { key, dir: 1 };
+    renderScreener();
+  });
+});
+
+function renderScreener(){
+  const body = document.getElementById('scrBody');
+  const empty = document.getElementById('scrEmpty');
+  const summary = document.getElementById('scrSummary');
+  document.querySelectorAll('#scrTable th.sortable').forEach(th => {
+    const arrow = th.querySelector('.arrow');
+    arrow.textContent = th.dataset.key === scrSortState.key ? (scrSortState.dir === 1 ? '▲' : '▼') : '';
+  });
+  if (!screenerRows.length){
+    body.innerHTML = '';
+    empty.style.display = 'block';
+    empty.textContent = 'Nessun preferito ancora. Vai su Scanner, scansiona una giornata e clicca la stella ☆ sulle giocate che ti interessano.';
+    summary.textContent = '';
+    return;
+  }
+  let rows = applyScrFilters(screenerRows);
+  if (scrSortState.key) {
+    const acc = SCR_SORT_ACCESSORS[scrSortState.key];
+    rows = [...rows].sort((a, b) => {
+      const va = acc(a), vb = acc(b);
+      if (va < vb) return -1 * scrSortState.dir;
+      if (va > vb) return 1 * scrSortState.dir;
+      return 0;
+    });
+  }
+  if (!rows.length){
+    body.innerHTML = '';
+    empty.style.display = 'block';
+    empty.textContent = 'Nessun preferito soddisfa i filtri impostati sopra.';
+    summary.textContent = '';
+    return;
+  }
+  empty.style.display = 'none';
+
+  const verified = screenerRows.filter(r => r.esito != null);
+  const favVerified = verified.filter(r => scrDerived(r).favorevole);
+  const favWon = favVerified.filter(r => r.esito === 'vinta').length;
+  summary.textContent = verified.length
+    ? `Storico: ${verified.length} giocate verificate · segnalate a valore/favorevoli: ${favVerified.length}, realizzate ${favWon} (${favVerified.length ? Math.round(favWon/favVerified.length*100) : 0}%)`
+    : 'Nessuna giocata ancora verificata — segna Vinta/Persa dopo la partita per costruire lo storico.';
+
+  body.innerHTML = rows.map(r => {
+    const { prob, edge, ev, hasQuota, favorevole } = scrDerived(r);
+    const valutazioneLabel = hasQuota
+      ? (favorevole ? 'Valore' : 'Nessun valore')
+      : (favorevole ? 'Favorevole (media)*' : 'Sfavorevole (media)*');
+    const storicoCell = r.esito == null
+      ? `<button class="rowdel" style="color:var(--accent);" data-act="vinta" data-id="${escAttr(r.id)}">✓ Vinta</button>
+         <button class="rowdel" data-act="persa" data-id="${escAttr(r.id)}">✕ Persa</button>`
+      : `<span class="${r.esito === 'vinta' ? 'verdict-fav' : 'verdict-nofav'}">${r.esito === 'vinta' ? 'Vinta' : 'Persa'}</span>
+         <button class="rowdel" title="annulla" data-act="${escAttr(r.esito)}" data-id="${escAttr(r.id)}">↺</button>`;
+    return `<tr>
+      <td class="metricname">${r.giocatore}<div class="subtle">G${r.giornata} · ${r.partita}</div></td>
+      <td>${MARKET_LABELS[r.mercato]}</td>
+      <td class="num">${fmt(r.linea,1)}</td>
+      <td class="num">${fmt(r.mediaVenue)} <span class="subtle">(${r.venue.toLowerCase()}, N=${r.nVenue})</span></td>
+      <td class="num">${fmt(r.mediaL3)}</td>
+      <td>${cvBadge(r.cv)}</td>
+      <td class="num">${pctColored(r.hitStag)}</td>
+      <td class="num">${hitChip(r.hitVenue)}</td>
+      <td class="num"><input type="text" inputmode="decimal" placeholder="1.85" value="${r.quota ?? ''}" style="width:54px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);padding:4px;" data-act="quota" data-id="${escAttr(r.id)}" /></td>
+      <td class="num">${prob != null ? pct(prob) : '—'}</td>
+      <td class="num ${edge != null && edge > 0 ? 'verdict-fav' : (edge != null ? 'verdict-nofav' : '')}">${edge != null ? (edge>0?'+':'') + (edge*100).toFixed(1)+'pp' : '—'}</td>
+      <td class="num ${ev != null && ev > 0 ? 'verdict-fav' : (ev != null ? 'verdict-nofav' : '')}">${ev != null ? (ev>0?'+':'') + ev.toFixed(2)+'€' : '—'}</td>
+      <td class="${favorevole ? 'verdict-fav' : 'verdict-nofav'}">${valutazioneLabel}</td>
+      <td>${storicoCell}</td>
+      <td><button class="rowdel" title="Rimuovi dai preferiti" data-act="remove" data-id="${escAttr(r.id)}">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+// Handler dei Preferiti via delegazione: gli id possono essere numeri (creati
+// in locale) o stringhe (tornati da Supabase). Passarli inline nell'attributo
+// onclick con JSON.stringify rompeva l'HTML per gli id stringa (doppi apici
+// dentro onclick="...") e il tasto ✕ non faceva nulla.
+function escAttr(v){
+  return String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+(function(){
+  const body = document.getElementById('scrBody');
+  body.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const id = btn.dataset.id, act = btn.dataset.act;
+    if (act === 'remove') removeScrRow(id);
+    else scrSetEsito(id, act);
+  });
+  body.addEventListener('change', (e) => {
+    const inp = e.target.closest('input[data-act="quota"]');
+    if (inp) scrSetQuota(inp.dataset.id, inp.value);
+  });
+})();
+
+renderScreener();
+</script>
+</body>
+</html>

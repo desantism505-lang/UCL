@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="favicon.ico" sizes="any" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#121A3D" />
+<title>Champions League 2026/27 — Classifiche</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#0A0E27;
+    --panel:#121A3D;
+    --panel-2:#0D1230;
+    --panel-header:#1B2550;
+    --zebra:#161F45;
+    --line:#2A3568;
+    --text:#FFFFFF;
+    --text-2:#D6DCF5;
+    --muted:#8A93C4;
+    --accent:#3DA5FF;
+    --accent-dim:#2E7BC4;
+    --accent-ink:#061225;
+    --warn:#F2A65A;
+    --warn-ink:#3D2408;
+    --bad:#E8735B;
+    --bad-ink:#3D0F08;
+    --radius:14px;
+    --radius-sm:8px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text-2);
+    font-family:'Inter',sans-serif;
+    font-variant-numeric:tabular-nums;
+    line-height:1.5;
+    min-height:100vh;
+  }
+  h1,h2,h3,.display{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    letter-spacing:-0.01em;
+    color:var(--text);
+  }
+  a{color:var(--accent);}
+
+  header{
+    padding:24px 32px 0;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  header h1{font-size:21px;margin:0;color:var(--text);}
+  header h1 span{color:var(--accent);}
+  header p{margin:6px 0 0;color:var(--muted);font-size:13px;max-width:460px;}
+  .fileload{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-size:12px;
+    color:var(--muted);
+  }
+  .fileload input{display:none;}
+  .fileload label{
+    border:1px solid var(--line);
+    padding:9px 16px;
+    border-radius:var(--radius-sm);
+    cursor:pointer;
+    color:var(--text-2);
+    font-weight:500;
+    transition:border-color .15s, background .15s;
+  }
+  .fileload label:hover{border-color:var(--accent-dim);background:var(--panel);}
+  #dataStatus{color:var(--accent);font-weight:600;}
+
+  nav.sitenav{
+    display:flex;
+    gap:4px;
+    padding:16px 32px 0;
+    border-bottom:1px solid var(--line);
+  }
+  nav.sitenav a{
+    display:inline-block;
+    padding:10px 16px;
+    font-size:13px;
+    font-weight:600;
+    color:var(--muted);
+    text-decoration:none;
+    border-bottom:2px solid transparent;
+    transition:color .15s, border-color .15s;
+  }
+  nav.sitenav a:hover{color:var(--text);}
+  nav.sitenav a.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+  .controls{
+    display:flex;
+    gap:12px;
+    padding:16px 32px;
+    border-bottom:1px solid var(--line);
+    background:var(--panel-2);
+    flex-wrap:wrap;
+  }
+  .ctrl{
+    flex:1 1 220px;
+    padding:12px 18px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+  }
+  .ctrl label{
+    display:block;
+    font-size:11px;
+    color:var(--muted);
+    margin-bottom:6px;
+    font-weight:500;
+  }
+  .ctrl select{
+    width:100%;
+    background-color:var(--panel);
+    border:none;
+    color:var(--text);
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:16px;
+    padding:2px 0;
+  }
+  .ctrl select:focus{outline:2px solid var(--accent);outline-offset:2px;}
+  .ctrl select option{
+    background-color:var(--panel);
+    color:var(--text);
+  }
+  select, input, button{
+    color-scheme: dark;
+    font-family:'Inter',sans-serif;
+  }
+
+  main{padding:32px 32px 60px;max-width:1180px;margin:0 auto;}
+
+  .empty{
+    color:var(--muted);
+    padding:60px 0;
+    text-align:center;
+    font-size:14px;
+  }
+
+  .grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:24px;
+  }
+  @media (max-width:820px){ .grid{grid-template-columns:1fr;} }
+
+  .panel{
+    border:1px solid var(--line);
+    background:var(--panel);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+  .panel h2{
+    font-size:14px;
+    margin:0;
+    padding:14px 20px;
+    background:var(--panel-header);
+    border-bottom:1px solid var(--line);
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    color:var(--accent);
+  }
+  .panel h2 .tag{
+    font-family:'Inter',sans-serif;
+    font-weight:500;
+    font-size:11px;
+    color:var(--muted);
+  }
+  .panel .body{padding:18px 20px;}
+
+  table.stat{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+  }
+  table.stat th{
+    text-align:left;
+    font-weight:700;
+    color:var(--accent);
+    background:var(--panel-header);
+    padding:10px 12px 10px 0;
+    padding-left:12px;
+    font-size:10.5px;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+  }
+  table.stat th:first-child{padding-left:0;}
+  table.stat td{
+    padding:11px 12px 11px 0;
+    padding-left:12px;
+    color:var(--text-2);
+    font-weight:500;
+  }
+  table.stat td:first-child{padding-left:0;}
+  table.stat tr:nth-child(even) td{background:var(--zebra);}
+  table.stat td.num, table.stat th.num{text-align:right;}
+  table.stat tr:last-child td{border-bottom:none;}
+
+  .metricname{color:var(--text);font-weight:600;}
+  .rank{color:var(--accent);font-weight:700;}
+  .rank-bad{color:var(--bad);font-weight:700;}
+  .rank.nd{color:var(--muted);font-weight:400;}
+  .chip{
+    display:inline-block;
+    background:var(--accent);
+    color:var(--accent-ink);
+    font-weight:700;
+    padding:4px 10px;
+    border-radius:6px;
+    font-size:12.5px;
+  }
+  .chip.warn{background:var(--warn);color:var(--warn-ink);}
+  .chip.bad{background:var(--bad);color:var(--bad-ink);}
+  .chip.flat{background:var(--line);color:var(--text-2);}
+  .status-pill{
+    display:inline-block;
+    font-size:10px;
+    padding:3px 9px;
+    border:1px solid var(--line);
+    border-radius:999px;
+    font-weight:600;
+  }
+  .status-OK{color:var(--accent);border-color:var(--accent-dim);}
+  .status-CAMPIONE{color:var(--warn);border-color:var(--warn);}
+  .status-NO{color:var(--bad);border-color:var(--bad);}
+
+  .rolepicker{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-bottom:12px;
+  }
+  .rolepicker button{
+    background:none;
+    border:1px solid var(--line);
+    color:var(--muted);
+    font-family:'Inter',sans-serif;
+    font-size:11px;
+    padding:5px 10px;
+    cursor:pointer;
+  }
+  .rolepicker button.active{
+    color:var(--bg);
+    background:var(--accent);
+    border-color:var(--accent);
+  }
+
+  .baseline-value{
+    display:inline-block;
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:18px;
+    color:var(--accent-ink);
+    background:var(--accent);
+    padding:3px 12px;
+    border-radius:8px;
+  }
+  .subtle{color:var(--muted);font-size:11px;}
+  .screener-form{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .screener-form select{
+    background-color:var(--panel-2);
+    color:var(--text);
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    padding:7px 10px;
+  }
+  .screener-form select option{background-color:var(--panel);color:var(--text);}
+  .screener-form button{
+    background:var(--accent);
+    color:var(--accent-ink);
+    border:none;
+    border-radius:var(--radius-sm);
+    font-family:'Inter',sans-serif;
+    font-weight:700;
+    font-size:12px;
+    padding:8px 14px;
+    cursor:pointer;
+  }
+  .screener-form button.secondary{
+    background:none;
+    color:var(--muted);
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+  }
+  .verdict-fav{color:var(--accent);font-weight:700;}
+  .verdict-nofav{color:var(--muted);}
+  .rowdel{
+    background:none;border:none;color:var(--bad);cursor:pointer;font-size:14px;
+  }
+
+  .match-title{
+    font-size:20px;
+    color:var(--accent);
+    margin:0 0 4px;
+  }
+  .facts-list{font-size:12px;line-height:1.9;color:var(--text-2);}
+  .facts-list .tag-inline{color:var(--muted);font-size:10.5px;}
+  .info-title{border-bottom:1px dotted var(--muted);cursor:help;color:var(--text);}
+  th.sortable{cursor:pointer;user-select:none;}
+  th.sortable:hover{color:var(--text);}
+  th.sortable .arrow{opacity:0.7;font-size:9px;margin-left:3px;}
+  .panel-collapse-btn{
+    background:none;
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+    color:var(--muted);
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:11px;
+    padding:4px 10px;
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .panel-collapse-btn:hover{color:var(--text);border-color:var(--accent-dim);}
+  .section-gap{margin-top:28px;}
+
+  .filter-group{
+    display:flex;
+    flex-wrap:wrap;
+    gap:4px 12px;
+    align-items:center;
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+    padding:9px 14px;
+    font-size:12px;
+    background:var(--panel-2);
+  }
+  .filter-group label{
+    display:flex;
+    align-items:center;
+    gap:5px;
+    color:var(--text-2);
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .filter-group input[type=checkbox]{width:14px;height:14px;}
+  .filter-label{color:var(--muted);font-size:11px;margin-right:4px;}
+  .btn-export{
+    background:none;
+    border:1px solid var(--accent-dim);
+    border-radius:var(--radius-sm);
+    color:var(--accent);
+    font-family:'Inter',sans-serif;
+    font-weight:700;
+    font-size:12px;
+    padding:8px 14px;
+    cursor:pointer;
+  }
+  .miniform{
+    display:flex;
+    gap:16px;
+    flex-wrap:wrap;
+    padding:16px 32px;
+    border-bottom:1px solid var(--line);
+    background:var(--panel-2);
+    align-items:flex-end;
+  }
+  .miniform > div{display:flex;flex-direction:column;gap:4px;}
+  .miniform label{font-size:11px;color:var(--muted);}
+  .miniform select{
+    background-color:var(--panel);
+    color:var(--text);
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    padding:7px 9px;
+    min-width:160px;
+  }
+  .miniform select option{background-color:var(--panel);color:var(--text);}
+
+  footer{
+    padding:24px 32px 48px;
+    color:var(--muted);
+    font-size:11px;
+    max-width:1180px;
+    margin:0 auto;
+  }
+
+</style>
+<style>
+  .classGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-top:14px;}
+  .classCard{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;}
+  .classCard h3{margin:0 0 10px;font-size:14px;color:var(--text);}
+  .classCard table{width:100%;border-collapse:collapse;font-size:13px;}
+  .classCard td, .classCard th{padding:4px 4px;}
+  .classCard th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;}
+  .classCard td.num, .classCard th.num{text-align:right;}
+  .classCard tr:not(:last-child) td{border-bottom:1px solid var(--line);}
+  .classRank{color:var(--muted);width:20px;display:inline-block;}
+  .classEmpty{color:var(--muted);font-size:13px;padding:8px 0;}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Champions League 2026/27 <span>· Classifiche</span></h1>
+    <p>Top 10 per ogni fondamentale — giocatori e squadre, Totale o Media (per90), Totale/Casa/Trasferta. Solo chi ha raggiunto il campione minimo entra in classifica: niente exploit isolati travestiti da record.</p>
+  </div>
+  <div class="fileload">
+    <span id="dataStatus">dati non caricati</span>
+    <label for="fileInput">Carica file aggiornato (.xlsx)</label>
+    <input type="file" id="fileInput" accept=".xlsx,.xls" />
+  </div>
+</header>
+<nav class="sitenav">
+  <a href="serie.html">Serie &amp; Ritardi</a>
+  <a href="index.html">Matchup Engine</a>
+  <a href="scanner.html">Scanner &amp; Screener</a>
+  <a href="multigol.html">Multigol</a>
+  <a href="arbitri.html">Arbitri</a>
+  <a href="classifiche.html" class="active">Classifiche</a>
+</nav>
+
+<main style="max-width:1280px;margin:0 auto;padding:24px 28px 40px;">
+
+<div class="controls" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px;">
+  <div class="ctrl">
+    <label>Segmento</label>
+    <select id="clSegmento">
+      <option value="TOTALE">Totale</option>
+      <option value="HOME">Casa</option>
+      <option value="AWAY">Trasferta</option>
+    </select>
+  </div>
+  <div class="ctrl">
+    <label>Vista</label>
+    <select id="clVista">
+      <option value="90">Media (per90)</option>
+      <option value="tot">Totale stagione</option>
+    </select>
+  </div>
+  <div class="ctrl">
+    <label>Storico giocatore</label>
+    <select id="clScopeSquadra">
+      <option value="ATTUALE">Solo squadra attuale</option>
+      <option value="TUTTE">Tutta la stagione (ogni squadra)</option>
+    </select>
+  </div>
+</div>
+
+<section>
+  <h2 style="margin:20px 0 4px;">Giocatori</h2>
+  <div class="subtle" style="margin-bottom:4px;">Entrano in classifica solo i giocatori con almeno 90 minuti in stagione (Totale) o almeno 2 presenze nel segmento scelto (Casa/Trasferta) — sotto soglia, il campione è troppo piccolo per dire qualcosa.</div>
+  <div class="classGrid" id="clPlayerGrid"></div>
+</section>
+
+<section>
+  <h2 style="margin:28px 0 4px;">Squadre</h2>
+  <div class="subtle" style="margin-bottom:4px;">Entrano in classifica solo le squadre con almeno 3 partite (Totale) o 2 (Casa/Trasferta) nel segmento scelto. I Corner sono già "a partita" per natura — qui Media e Totale coincidono nella scala, cambia solo se sommato o diviso per le partite.</div>
+  <div class="classGrid" id="clTeamGrid"></div>
+</section>
+
+</main>
+
+<footer>
+  Calcolo locale, nessun dato inviato altrove. Numeri ricalcolati dagli stessi dati grezzi usati in tutte le altre pagine del sito.
+</footer>
+
+<script src="engine.js"></script>
+<script>
+let DB = null;
+
+function toISO(v){
+  if (v == null) return null;
+  if (typeof v === 'number') {
+    const d = XLSX.SSF.parse_date_code(v);
+    if (!d) return null;
+    return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+  }
+  const s = String(v);
+  const m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[0] : s;
+}
+
+function sheetToRows(wb, name){
+  const ws = wb.Sheets[name];
+  if (!ws) return [];
+  return XLSX.utils.sheet_to_json(ws, { defval: null, raw: true });
+}
+
+function loadWorkbook(wb){
+  const rosters = sheetToRows(wb, 'ROSTERS').filter(r => r.Player_ID);
+  const calendarRaw = sheetToRows(wb, 'CALENDAR').filter(r => r.Match_ID);
+  const calendar = calendarRaw.map(r => ({ ...r, Data: toISO(r.Data) }));
+  const matchLogRaw = sheetToRows(wb, 'MATCH_LOG').filter(r => r.Match_ID);
+  const matchLog = matchLogRaw.map(r => ({ ...r, Data: toISO(r.Data) }));
+  const arbitri = sheetToRows(wb, 'ARBITRI').filter(r => r.Match_ID);
+
+  DB = { rosters, calendar, matchLog: buildIndexes(matchLog), arbitri };
+  document.getElementById('dataStatus').textContent =
+    `${rosters.length} giocatori · ${calendar.length} partite`;
+  renderClassifiche();
+}
+
+function loadFromJSON(D){
+  const rosters = D.rosters.filter(r => r.Player_ID);
+  const calendar = D.calendar.filter(r => r.Match_ID);
+  const matchLog = D.match_log.filter(r => r.Match_ID);
+  const arbitri = (D.arbitri || []).filter(r => r.Match_ID);
+  DB = { rosters, calendar, matchLog: buildIndexes(matchLog), arbitri };
+  document.getElementById('dataStatus').textContent =
+    `${rosters.length} giocatori · ${calendar.length} partite (dati inclusi)`;
+  renderClassifiche();
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  if (typeof fetch !== 'function') return;
+  fetch('./data.json')
+    .then(r => { if (!r.ok) throw new Error('no data.json'); return r.json(); })
+    .then(loadFromJSON)
+    .catch(() => {});
+});
+
+document.getElementById('fileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const wb = XLSX.read(ev.target.result, { type: 'array', cellDates: false });
+    loadWorkbook(wb);
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+document.getElementById('clSegmento').addEventListener('change', () => { if (DB) renderClassifiche(); });
+document.getElementById('clVista').addEventListener('change', () => { if (DB) renderClassifiche(); });
+document.getElementById('clScopeSquadra').addEventListener('change', () => { if (DB) renderClassifiche(); });
+
+// --- Metriche ---
+const PLAYER_METRICS = [
+  ['Tiri', 'Tiri', 'Tiri_90'],
+  ['SOT', 'Tiri in porta', 'SOT_90'],
+  ['FC', 'Falli commessi', 'FC_90'],
+  ['FD', 'Falli subiti', 'FD_90'],
+  ['Cartellini', 'Cartellini', 'Cartellini_90'],
+];
+
+const TEAM_METRICS = [
+  ['Tiri_Fatti', 'Tiri fatti', 'Tiri_Fatti_90'],
+  ['Tiri_Subiti', 'Tiri subiti', 'Tiri_Subiti_90'],
+  ['SOT_Fatti', 'Tiri in porta fatti', 'SOT_Fatti_90'],
+  ['SOT_Subiti', 'Tiri in porta subiti', 'SOT_Subiti_90'],
+  ['Falli_Fatti', 'Falli commessi', 'Falli_Fatti_90'],
+  ['Falli_Subiti', 'Falli subiti', 'Falli_Subiti_90'],
+  ['Cartellini', 'Cartellini', 'Cartellini_90'],
+];
+
+function topPlayers(segmento, totKey, k90Key, n){
+  const out = [];
+  for (const p of DB.rosters) {
+    if (p.Attivo_SerieA !== 'SI') continue;
+    const teamFiltro = scopeSquadra ? p.Team_ID_Rif : null;
+    const s = computePlayerStats(DB.matchLog, p.Player_ID, segmento, null, teamFiltro);
+    if (s.Partite === 0) continue;
+    if (segmento === 'TOTALE' && s.Minuti < BASELINE_THRESHOLDS.minMinutiStagione) continue;
+    if (segmento !== 'TOTALE' && s.Partite < BASELINE_THRESHOLDS.minNVenue) continue;
+    const value = vista === '90' ? s[k90Key] : s[totKey];
+    if (value == null) continue;
+    out.push({ nome: p.Nome_completo, squadra: p.Squadra_Rif, value, partite: s.Partite });
+  }
+  out.sort((a,b) => b.value - a.value);
+  return out.slice(0, n);
+}
+
+function topTeams(segmento, totKey, k90Key, n){
+  const teamsAll = [...new Set(DB.rosters.map(r => r.Team_ID_Rif))];
+  const minSample = segmento === 'TOTALE' ? 3 : 2;
+  const out = [];
+  for (const t of teamsAll) {
+    const s = computeTeamStats(DB.matchLog, t, segmento);
+    if (s.Partite < minSample) continue;
+    const value = vista === '90' ? s[k90Key] : s[totKey];
+    if (value == null) continue;
+    const nome = (DB.rosters.find(r => r.Team_ID_Rif === t) || {}).Squadra_Rif || t;
+    out.push({ nome, value, partite: s.Partite });
+  }
+  out.sort((a,b) => b.value - a.value);
+  return out.slice(0, n);
+}
+
+function topTeamsCorner(segmento, tipo, n){
+  // tipo: 'fatti' o 'concessi'
+  const teamsAll = [...new Set(DB.rosters.map(r => r.Team_ID_Rif))];
+  const minSample = segmento === 'TOTALE' ? 3 : 2;
+  const out = [];
+  for (const t of teamsAll) {
+    const matches = teamCornerMatches(DB.calendar, t, segmento);
+    if (matches.length < minSample) continue;
+    const key = tipo === 'fatti' ? 'Corner' : 'CornerConcessi';
+    const tot = matches.reduce((a,m) => a + (m[key] || 0), 0);
+    const value = vista === '90' ? tot / matches.length : tot;
+    const nome = (DB.rosters.find(r => r.Team_ID_Rif === t) || {}).Squadra_Rif || t;
+    out.push({ nome, value, partite: matches.length });
+  }
+  out.sort((a,b) => b.value - a.value);
+  return out.slice(0, n);
+}
+
+function fmtVal(v){
+  return Number.isInteger(v) ? String(v) : v.toFixed(2);
+}
+
+function tableHTML(titolo, rows, unitLabel){
+  if (!rows.length) {
+    return `<div class="classCard"><h3>${titolo}</h3><div class="classEmpty">Nessuno raggiunge il campione minimo in questo segmento.</div></div>`;
+  }
+  const body = rows.map((r, i) => `
+    <tr>
+      <td><span class="classRank">${i+1}.</span> ${r.nome}${r.squadra ? ` <span class="subtle">(${r.squadra})</span>` : ''}</td>
+      <td class="num">${fmtVal(r.value)}</td>
+      <td class="num subtle">${r.partite}</td>
+    </tr>`).join('');
+  return `
+    <div class="classCard">
+      <h3>${titolo}</h3>
+      <table>
+        <thead><tr><th>Nome</th><th class="num">${unitLabel}</th><th class="num">Partite</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>`;
+}
+
+let vista = '90';
+let scopeSquadra = true;
+
+function renderClassifiche(){
+  if (!DB) return;
+  const segmento = document.getElementById('clSegmento').value;
+  vista = document.getElementById('clVista').value;
+  scopeSquadra = document.getElementById('clScopeSquadra').value !== 'TUTTE';
+  const unitLabel = vista === '90' ? 'Media' : 'Totale';
+
+  const playerGrid = document.getElementById('clPlayerGrid');
+  playerGrid.innerHTML = PLAYER_METRICS.map(([totKey, label, k90Key]) => {
+    const rows = topPlayers(segmento, totKey, k90Key, 10);
+    return tableHTML(label, rows, unitLabel);
+  }).join('');
+
+  const teamGrid = document.getElementById('clTeamGrid');
+  let teamHtml = TEAM_METRICS.map(([totKey, label, k90Key]) => {
+    const rows = topTeams(segmento, totKey, k90Key, 10);
+    return tableHTML(label, rows, unitLabel);
+  }).join('');
+  teamHtml += tableHTML('Corner fatti', topTeamsCorner(segmento, 'fatti', 10), unitLabel);
+  teamHtml += tableHTML('Corner concessi', topTeamsCorner(segmento, 'concessi', 10), unitLabel);
+  teamGrid.innerHTML = teamHtml;
+}
+</script>
+</body>
+</html>

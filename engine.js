@@ -1,0 +1,1802 @@
+// ============================================================================
+// SERIE A ANALYTICS ENGINE — porting fedele della logica del workbook Excel
+// (PLAYERS, TEAM_STATS, ROLE_CONCESSIONS, BASELINE). Nessuna formula: solo
+// funzioni pure su array di oggetti, pensate per girare in un browser.
+// ============================================================================
+
+function buildIndexes(matchLog) {
+  // Ordina per data e assegna Player_Seq / PlayerVenue_Seq (mirror delle
+  // colonne calcolate di MATCH_LOG nel file originale).
+  const rows = [...matchLog].sort((a, b) => a.Data.localeCompare(b.Data));
+  const seqAll = {};
+  const seqVenue = {};
+  for (const r of rows) {
+    seqAll[r.Player_ID] = (seqAll[r.Player_ID] || 0) + 1;
+    r.Player_Seq = seqAll[r.Player_ID];
+    const key = r.Player_ID + '|' + r.Venue;
+    seqVenue[key] = (seqVenue[key] || 0) + 1;
+    r.PlayerVenue_Seq = seqVenue[key];
+  }
+  return rows;
+}
+
+function filterRows(matchLog, pred) {
+  return matchLog.filter(pred);
+}
+
+function sum(rows, col) {
+  return rows.reduce((a, r) => a + (Number(r[col]) || 0), 0);
+}
+
+function countGE(rows, col, n) {
+  return rows.filter((r) => Number(r[col]) >= n).length;
+}
+
+// ---------------------------------------------------------------------------
+// PLAYERS — statistiche per singolo giocatore, segmento TOTALE/HOME/AWAY.
+// titolareFiltro: null/undefined = tutte le presenze (default, comportamento
+// invariato rispetto a prima); 'TITOLARE' = solo presenze da titolare;
+// 'SUBENTRATO' = solo presenze da subentrato. Filtro applicato PRIMA del
+// segmento Venue, quindi combinabile liberamente con TOTALE/HOME/AWAY.
+// ---------------------------------------------------------------------------
+// titolareFiltro: null/undefined = tutte le presenze; 'TITOLARE'/'SUBENTRATO'
+// come sopra. teamFiltro: se passato (un Team_ID), limita le righe a quelle
+// giocate CON QUELLA squadra — serve per i giocatori trasferiti a stagione in
+// corso: senza questo filtro, le partite con il club precedente si
+// mescolerebbero silenziosamente in "Tiri stagione" del club attuale. Se
+// null/undefined, comportamento invariato (tutte le presenze, qualunque
+// squadra) — utile per uno storico complessivo esplicito.
+function computePlayerStats(matchLog, playerId, segmento, titolareFiltro, teamFiltro) {
+  let rows = filterRows(matchLog, (r) => r.Player_ID === playerId);
+  if (teamFiltro) rows = rows.filter((r) => r.Team_ID === teamFiltro);
+  if (titolareFiltro === 'TITOLARE') rows = rows.filter((r) => r.Titolare === 'Sì');
+  if (titolareFiltro === 'SUBENTRATO') rows = rows.filter((r) => r.Titolare === 'No');
+  if (segmento !== 'TOTALE') {
+    const v = segmento === 'HOME' ? 'H' : 'A';
+    rows = rows.filter((r) => r.Venue === v);
+  }
+  const partite = rows.length;
+  const minuti = sum(rows, 'Minuti');
+  const per90 = (col) => (minuti ? (sum(rows, col) / minuti) * 90 : null);
+  const hit = (col, n) => (partite ? countGE(rows, col, n) / partite : null);
+
+  const out = {
+    Partite: partite,
+    Minuti: minuti,
+    Minuti_Medi: partite ? minuti / partite : null,
+    Tiri: sum(rows, 'Tiri'),
+    Tiri_90: per90('Tiri'),
+    SOT: sum(rows, 'Tiri_in_porta'),
+    SOT_90: per90('Tiri_in_porta'),
+    FC: sum(rows, 'Falli_commessi'),
+    FC_90: per90('Falli_commessi'),
+    FD: sum(rows, 'Falli_subiti'),
+    FD_90: per90('Falli_subiti'),
+    Gialli: sum(rows, 'Gialli'),
+    Rossi: sum(rows, 'Rossi'),
+  };
+  for (let n = 1; n <= 4; n++) out['Hit_Tiri_' + n] = hit('Tiri', n);
+  for (let n = 1; n <= 3; n++) out['Hit_SOT_' + n] = hit('Tiri_in_porta', n);
+  for (let n = 1; n <= 3; n++) out['Hit_FC_' + n] = hit('Falli_commessi', n);
+  for (let n = 1; n <= 3; n++) out['Hit_FD_' + n] = hit('Falli_subiti', n);
+  out.Cartellini = out.Gialli + out.Rossi;
+  out.Cartellini_90 = minuti ? (out.Cartellini / minuti) * 90 : null;
+  out.Hit_Cart_1 = partite
+    ? (countGE(rows, 'Gialli', 1) +
+        rows.filter((r) => Number(r.Gialli) === 0 && Number(r.Rossi) >= 1).length) /
+      partite
+    : null;
+
+  // Consistenza (coefficiente di variazione): quanto oscilla la prestazione
+  // partita per partita, a parità di media. CV = deviazione standard / media,
+  // calcolato sul conteggio per partita (non /90) — richiede almeno 2 partite,
+  // altrimenti non è misurabile e resta null.
+  function cvOf(extract) {
+    if (partite < 2) return { mean: partite ? extract(rows[0]) : null, sd: null, cv: null };
+    const vals = rows.map(extract);
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (vals.length - 1);
+    const sd = Math.sqrt(variance);
+    return { mean, sd, cv: mean ? sd / mean : null };
+  }
+  const cvTiri = cvOf((r) => Number(r.Tiri) || 0);
+  const cvSOT = cvOf((r) => Number(r.Tiri_in_porta) || 0);
+  const cvFC = cvOf((r) => Number(r.Falli_commessi) || 0);
+  const cvFD = cvOf((r) => Number(r.Falli_subiti) || 0);
+  const cvCart = cvOf((r) => (Number(r.Gialli) || 0) + (Number(r.Rossi) || 0));
+  out.Tiri_CV = cvTiri.cv; out.Tiri_SD = cvTiri.sd;
+  out.SOT_CV = cvSOT.cv; out.SOT_SD = cvSOT.sd;
+  out.FC_CV = cvFC.cv; out.FC_SD = cvFC.sd;
+  out.FD_CV = cvFD.cv; out.FD_SD = cvFD.sd;
+  out.Cart_CV = cvCart.cv; out.Cart_SD = cvCart.sd;
+
+  for (const [tag, N] of [['L3', 3], ['L5', 5], ['L10', 10]]) {
+    const seqCol = segmento === 'TOTALE' ? 'Player_Seq' : 'PlayerVenue_Seq';
+    const sub = rows.filter((r) => r[seqCol] > partite - N);
+    const subMin = sum(sub, 'Minuti');
+    const subN = Math.min(N, partite);
+    out[tag + '_N'] = subN;
+    out[tag + '_Minuti'] = subMin;
+    const p90 = (col) => (subMin ? (sum(sub, col) / subMin) * 90 : null);
+    out[tag + '_Tiri_90'] = p90('Tiri');
+    out[tag + '_SOT_90'] = p90('Tiri_in_porta');
+    out[tag + '_FC_90'] = p90('Falli_commessi');
+    out[tag + '_FD_90'] = p90('Falli_subiti');
+    out[tag + '_Cart_90'] = subMin
+      ? ((sum(sub, 'Gialli') + sum(sub, 'Rossi')) / subMin) * 90
+      : null;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// TEAM_STATS — squadra x segmento. "Fatti" = diretto sulla propria venue;
+// "Subiti" = sulle righe dell'avversario, con venue INVERTITA (verificato
+// contro il calendario reale: per le partite in CASA di una squadra, la riga
+// dell'avversario nel log riporta Venue="A", perché lì Team_ID è l'avversario
+// che gioca in trasferta).
+// ---------------------------------------------------------------------------
+function teamRowsFatti(matchLog, team, segmento) {
+  let rows = filterRows(matchLog, (r) => r.Team_ID === team);
+  if (segmento !== 'TOTALE') {
+    const v = segmento === 'HOME' ? 'H' : 'A';
+    rows = rows.filter((r) => r.Venue === v);
+  }
+  return rows;
+}
+function teamRowsSubiti(matchLog, team, segmento) {
+  let rows = filterRows(matchLog, (r) => r.Opp_ID === team);
+  if (segmento !== 'TOTALE') {
+    const v = segmento === 'HOME' ? 'A' : 'H'; // inversione verificata
+    rows = rows.filter((r) => r.Venue === v);
+  }
+  return rows;
+}
+
+function computeTeamStats(matchLog, team, segmento) {
+  const fatti = teamRowsFatti(matchLog, team, segmento);
+  const subiti = teamRowsSubiti(matchLog, team, segmento);
+  const partite = new Set(fatti.map((r) => r.Match_ID)).size;
+  const per90 = (rows, col) => (partite ? sum(rows, col) / partite : null);
+
+  const possessoRows = [];
+  const seen = new Set();
+  for (const r of fatti) {
+    const k = r.Match_ID + '|' + r.Team_ID;
+    if (r.Possesso_Team != null && r.Possesso_Team !== '' && !seen.has(k)) {
+      seen.add(k);
+      possessoRows.push(Number(r.Possesso_Team));
+    }
+  }
+
+  const out = { Team_ID: team, Segmento: segmento, Partite: partite };
+  for (const [label, col] of [
+    ['Tiri', 'Tiri'],
+    ['SOT', 'Tiri_in_porta'],
+    ['Falli', 'Falli_commessi'], // "Falli_Fatti" nel workbook
+  ]) {
+    out[label + '_Fatti'] = sum(fatti, col);
+    out[label + '_Fatti_90'] = per90(fatti, col);
+  }
+  // Falli_Subiti nel workbook usa la colonna Falli_subiti del log (falli subiti
+  // dalla squadra che attacca) sommata sulle proprie righe (Fatti-side)
+  out['FalliSubiti_Fatti'] = sum(fatti, 'Falli_subiti');
+  out['FalliSubiti_Fatti_90'] = per90(fatti, 'Falli_subiti');
+
+  for (const [label, col] of [
+    ['Tiri', 'Tiri'],
+    ['SOT', 'Tiri_in_porta'],
+  ]) {
+    out[label + '_Subiti'] = sum(subiti, col);
+    out[label + '_Subiti_90'] = per90(subiti, col);
+  }
+  // Falli commessi dagli avversari contro questa squadra (=Falli_commessi sulle
+  // righe Opp_ID=team, venue invertita) — mappa a "Falli_Subiti" del workbook
+  out['Falli_Subiti'] = sum(subiti, 'Falli_commessi');
+  out['Falli_Subiti_90'] = per90(subiti, 'Falli_commessi');
+
+  out.Gialli = sum(fatti, 'Gialli');
+  out.Rossi = sum(fatti, 'Rossi');
+  out.Cartellini = out.Gialli + out.Rossi;
+  out.Cartellini_90 = partite ? out.Cartellini / partite : null;
+  out.Possesso_Medio = possessoRows.length
+    ? possessoRows.reduce((a, b) => a + b, 0) / possessoRows.length // divide per le sole partite col dato
+    : null;
+  out.Possesso_N = possessoRows.length;
+  return out;
+}
+
+// Rank discendente su un elenco di {Team_ID, value, partite}, valido solo se
+// tutte le squadre eleggibili (campione minimo) raggiungono TOTAL_TEAMS —
+// altrimenti "N/D". TOTAL_TEAMS = 36 per la fase a campionato unico UCL
+// (era 20 nella versione Serie A di questo stesso motore).
+const TOTAL_TEAMS = 36;
+function rankDesc(list, minSample, totalTeams = TOTAL_TEAMS) {
+  const eligible = list.filter((x) => x.partite >= minSample && x.value != null);
+  const ranked = {};
+  if (eligible.length !== totalTeams) {
+    for (const x of list) ranked[x.key] = 'N/D';
+    return ranked;
+  }
+  for (const x of list) {
+    if (x.partite < minSample || x.value == null) {
+      ranked[x.key] = 'N/D';
+      continue;
+    }
+    const higher = eligible.filter((y) => y.value > x.value).length;
+    ranked[x.key] = 1 + higher;
+  }
+  return ranked;
+}
+
+// Rank PROVVISORIO: come rankDesc, ma calcolato solo tra le squadre che hanno
+// già raggiunto il campione minimo, qualunque sia il loro numero (non blocca
+// tutto a "N/D" se non sono ancora 20/20). Va sempre mostrato con l'etichetta
+// "X eleggibili su 20", perché prima di fine stagione può cambiare parecchio
+// partita dopo partita — non è il rank ufficiale, è una stima di comodo.
+function rankProvisional(list, minSample) {
+  const eligible = list.filter((x) => x.partite >= minSample && x.value != null);
+  const out = {};
+  for (const x of list) {
+    if (x.partite < minSample || x.value == null) {
+      out[x.key] = { rank: 'N/D', eligible: eligible.length };
+      continue;
+    }
+    const higher = eligible.filter((y) => y.value > x.value).length;
+    out[x.key] = { rank: 1 + higher, eligible: eligible.length };
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// ROLE_CONCESSIONS — squadra x segmento x ruolo: cosa concede quella squadra
+// ai giocatori che occupano un certo ruolo tattico (venue invertita, come le
+// colonne "Subiti" di TEAM_STATS). Le righe filtrate sono quelle DEGLI
+// AVVERSARI di quel ruolo, quindi:
+// - Falli_Contro_Ruolo_90 = falli che il ruolo COMMETTE contro questa squadra
+//   (colonna Falli_commessi sulle loro righe — aggressività del ruolo)
+// - FalliSubiti_Ruolo_90 = falli che il ruolo SUBISCE da questa squadra
+//   (colonna Falli_subiti sulle loro righe — quanto la squadra fallisce su
+//   quel ruolo, il concetto opposto al precedente)
+// - Cartellini_Ruolo_90 = cartellini (gialli+rossi) ricevuti dal ruolo
+//   quando affronta questa squadra
+// ---------------------------------------------------------------------------
+function computeRoleConcessions(matchLog, team, segmento, ruolo, teamPartite) {
+  let rows = filterRows(matchLog, (r) => r.Opp_ID === team && r.Posizione_Analitica === ruolo);
+  if (segmento !== 'TOTALE') {
+    const v = segmento === 'HOME' ? 'A' : 'H';
+    rows = rows.filter((r) => r.Venue === v);
+  }
+  const nPrestazioni = rows.length;
+  const per90 = (col) => (teamPartite ? sum(rows, col) / teamPartite : null);
+  return {
+    Team_ID: team,
+    Segmento: segmento,
+    Posizione_Analitica: ruolo,
+    N_Prestazioni_Ruolo: nPrestazioni,
+    Tiri_Concessi_90: per90('Tiri'),
+    SOT_Concessi_90: per90('Tiri_in_porta'),
+    Falli_Contro_Ruolo_90: per90('Falli_commessi'),
+    FalliSubiti_Ruolo_90: per90('Falli_subiti'),
+    Cartellini_Ruolo_90: teamPartite ? (sum(rows, 'Gialli') + sum(rows, 'Rossi')) / teamPartite : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// BASELINE — media pesata Stagione 40% / Venue 30% / L10 20% / L5 10%,
+// normalizzata sui soli pesi delle componenti disponibili.
+// ---------------------------------------------------------------------------
+const BASELINE_WEIGHTS = { stag: 40, venue: 30, l10: 20, l5: 10 };
+const BASELINE_THRESHOLDS = { minMinutiStagione: 90, minNVenue: 2, minL5: 2, minL10: 3 };
+const SHRINK_K = 3; // a n=3 il peso della componente è dimezzato; a n=1 è un quarto; a n=10 è ~77%.
+
+// Shrinkage bayesiano: il peso "di diritto" di ogni componente (venue, L10, L5)
+// viene ridotto in proporzione a quanti dati ha davvero dietro (n/(n+k)).
+// Il peso "perso" da una componente con campione piccolo non sparisce: viene
+// spostato sulla Stagione, che è la componente col campione più ampio e serve
+// da riferimento più stabile quando le altre sono ancora deboli.
+function weightedBaselineShrunk(stag90, venue90, l1090, l590, nVenue, nL10, nL5, weights) {
+  const shrink = (w, n) => w * (n / (n + SHRINK_K));
+  const wVenueEff = venue90 != null ? shrink(weights.venue, nVenue) : 0;
+  const wL10Eff = l1090 != null ? shrink(weights.l10, nL10) : 0;
+  const wL5Eff = l590 != null ? shrink(weights.l5, nL5) : 0;
+  const lost =
+    (venue90 != null ? weights.venue - wVenueEff : 0) +
+    (l1090 != null ? weights.l10 - wL10Eff : 0) +
+    (l590 != null ? weights.l5 - wL5Eff : 0);
+  const wStagEff = stag90 != null ? weights.stag + lost : 0;
+
+  let num = 0;
+  let den = 0;
+  if (stag90 != null) { num += stag90 * wStagEff; den += wStagEff; }
+  if (venue90 != null) { num += venue90 * wVenueEff; den += wVenueEff; }
+  if (l1090 != null) { num += l1090 * wL10Eff; den += wL10Eff; }
+  if (l590 != null) { num += l590 * wL5Eff; den += wL5Eff; }
+  return den ? num / den : null;
+}
+
+function computeBaseline(totale, home, away) {
+  // totale/home/away sono gli oggetti restituiti da computePlayerStats
+  const statoHome = (() => {
+    if (totale.Partite === 0) return 'NO DATI STAGIONE';
+    if (home.Partite === 0) return 'NO HOME';
+    if (
+      totale.Minuti < BASELINE_THRESHOLDS.minMinutiStagione ||
+      home.Partite < BASELINE_THRESHOLDS.minNVenue ||
+      totale.L5_N < BASELINE_THRESHOLDS.minL5 ||
+      totale.L10_N < BASELINE_THRESHOLDS.minL10
+    )
+      return 'CAMPIONE RIDOTTO';
+    return 'OK';
+  })();
+  const statoAway = (() => {
+    if (totale.Partite === 0) return 'NO DATI STAGIONE';
+    if (away.Partite === 0) return 'NO AWAY';
+    if (
+      totale.Minuti < BASELINE_THRESHOLDS.minMinutiStagione ||
+      away.Partite < BASELINE_THRESHOLDS.minNVenue ||
+      totale.L5_N < BASELINE_THRESHOLDS.minL5 ||
+      totale.L10_N < BASELINE_THRESHOLDS.minL10
+    )
+      return 'CAMPIONE RIDOTTO';
+    return 'OK';
+  })();
+
+  const metrics = ['Tiri', 'SOT', 'FC', 'FD', 'Cart'];
+  const out = { Stato_HOME: statoHome, Stato_AWAY: statoAway };
+  for (const m of metrics) {
+    const stag90 = totale[m + '_90'];
+    const home90 = home[m + '_90'];
+    const away90 = away[m + '_90'];
+    const l1090 = totale['L10_' + m + '_90'];
+    const l590 = totale['L5_' + m + '_90'];
+    out[m + '_BASE_HOME'] =
+      totale.Partite && home.Partite
+        ? weightedBaselineShrunk(stag90, home90, l1090, l590, home.Partite, totale.L10_N, totale.L5_N, BASELINE_WEIGHTS)
+        : null;
+    out[m + '_BASE_AWAY'] =
+      totale.Partite && away.Partite
+        ? weightedBaselineShrunk(stag90, away90, l1090, l590, away.Partite, totale.L10_N, totale.L5_N, BASELINE_WEIGHTS)
+        : null;
+  }
+  return out;
+}
+
+// Intervallo di confidenza di Wilson (95%) per un hit rate su campione n.
+// Più corretto del normale su campioni piccoli (mai limiti assurdi tipo
+// negativi o sopra 100%). Ritorna [lower, upper] in frazione (0-1).
+function wilsonInterval(phat, n) {
+  if (!n || phat == null) return [null, null];
+  const z = 1.96;
+  const denom = 1 + (z * z) / n;
+  const center = phat + (z * z) / (2 * n);
+  const adj = z * Math.sqrt((phat * (1 - phat)) / n + (z * z) / (4 * n * n));
+  return [(center - adj) / denom, (center + adj) / denom];
+}
+
+// ---------------------------------------------------------------------------
+// STATISTICHE SQUADRA (pannello "Statistiche squadra" di index.html): totali
+// per singola partita (non per90) di Tiri/SOT/Falli/Cartellini/Corner, usati
+// per hit-rate su linea libera, confronto diretto (duel) e proiezione
+// moltiplicativa. Nessuna di queste richiede il risultato della partita.
+//
+// NOTA su Corner: a differenza di Tiri/SOT/Falli/Cartellini (che sono per
+// giocatore, in MATCH_LOG, e vanno sommati riga per riga), Corner è già un
+// totale-partita in CALENDAR (Corner_Home/Corner_Away) — non esiste a
+// livello di singolo giocatore. Per questo le funzioni sotto accettano un
+// parametro `calendar` opzionale: se non passato, si comportano come prima
+// (solo Tiri/SOT/Falli/Cart); se passato, aggiungono anche Corner.
+// ---------------------------------------------------------------------------
+
+// Corner "fatti" e "concessi" di una squadra, partita per partita — solo
+// sulle CONCLUSA con Corner_Home/Corner_Away compilati (nessun dato inventato
+// sulle partite dove manca).
+function teamCornerMatches(calendar, teamId, segmento) {
+  let rows = calendar.filter(
+    (c) =>
+      (c.Home_ID === teamId || c.Away_ID === teamId) &&
+      c.Stato === 'CONCLUSA' &&
+      c.Corner_Home != null &&
+      c.Corner_Away != null
+  );
+  if (segmento !== 'TOTALE') {
+    rows = rows.filter((c) => (segmento === 'HOME' ? c.Home_ID === teamId : c.Away_ID === teamId));
+  }
+  return rows.map((c) => {
+    const isHome = c.Home_ID === teamId;
+    return {
+      Match_ID: c.Match_ID,
+      Corner: isHome ? c.Corner_Home : c.Corner_Away,
+      CornerConcessi: isHome ? c.Corner_Away : c.Corner_Home,
+    };
+  });
+}
+
+// Totali per-partita di UNA squadra nel segmento richiesto: un oggetto per
+// Match_ID con la somma dei valori di tutti i giocatori di quella squadra in
+// quella partita, più Corner se viene passato `calendar`.
+function computeTeamMatchTotals(matchLog, teamId, segmento, calendar) {
+  const rows = teamRowsFatti(matchLog, teamId, segmento);
+  const byMatch = {};
+  for (const r of rows) {
+    const m = byMatch[r.Match_ID] || (byMatch[r.Match_ID] = { Match_ID: r.Match_ID, Tiri: 0, SOT: 0, Falli: 0, Cart: 0 });
+    m.Tiri += Number(r.Tiri) || 0;
+    m.SOT += Number(r.Tiri_in_porta) || 0;
+    m.Falli += Number(r.Falli_commessi) || 0;
+    m.Cart += (Number(r.Gialli) || 0) + (Number(r.Rossi) || 0);
+  }
+  const result = Object.values(byMatch);
+  if (calendar) {
+    const cornerByMatch = {};
+    for (const c of teamCornerMatches(calendar, teamId, segmento)) cornerByMatch[c.Match_ID] = c.Corner;
+    for (const m of result) m.Corner = cornerByMatch[m.Match_ID] != null ? cornerByMatch[m.Match_ID] : null;
+  }
+  return result;
+}
+
+// Hit rate: quante partite (su quelle con un valore valido per la metrica) la
+// squadra ha superato (Over) o non raggiunto (Under) una linea libera. Salta
+// le partite dove la metrica è null (es. Corner mancante) invece di contarle
+// come "non superata". mode: 'over' (default) o 'under'.
+function teamHitRate(totals, key, line, mode) {
+  if (line == null || !Number.isFinite(line)) return { n: 0, hits: 0, rate: null };
+  const valid = totals.filter((t) => t[key] != null);
+  const n = valid.length;
+  const hits = mode === 'under'
+    ? valid.filter((t) => t[key] < line).length
+    : valid.filter((t) => t[key] > line).length;
+  // pushes = partite esattamente sulla linea (possibili solo con linee intere):
+  // Over + Under + Push = n. Con linee .5 pushes e' sempre 0.
+  const pushes = valid.filter((t) => t[key] === line).length;
+  return { n, hits, pushes, rate: n ? hits / n : null };
+}
+
+// Media di lega di una metrica, per-partita, sul segmento richiesto — media
+// dei totali-partita di TUTTE le squadre (ogni partita conta una volta per
+// ciascuna prospettiva attacco, coerente con una "media attacco" di lega).
+function leagueAverageMetric(matchLog, teamsAll, segmento, key, calendar) {
+  let s = 0, n = 0;
+  for (const t of teamsAll) {
+    for (const m of computeTeamMatchTotals(matchLog, t, segmento, calendar)) {
+      if (m[key] != null) { s += m[key]; n++; }
+    }
+  }
+  return n ? s / n : null;
+}
+
+// Duel totals: per ogni partita della squadra nel segmento, il proprio totale
+// e quello dell'avversario nella STESSA partita (per il "confronto diretto").
+// Per Corner, il "concesso" dall'avversario è già disponibile in CALENDAR
+// (CornerConcessi) — non richiede somma su MATCH_LOG.
+function computeTeamDuelTotals(matchLog, teamId, segmento, calendar) {
+  const ownTotals = computeTeamMatchTotals(matchLog, teamId, segmento, calendar);
+  const oppRows = teamRowsSubiti(matchLog, teamId, segmento); // righe avversario, venue già invertita
+  const oppByMatch = {};
+  for (const r of oppRows) {
+    const m = oppByMatch[r.Match_ID] || (oppByMatch[r.Match_ID] = { Tiri: 0, SOT: 0, Falli: 0, Cart: 0 });
+    m.Tiri += Number(r.Tiri) || 0;
+    m.SOT += Number(r.Tiri_in_porta) || 0;
+    m.Falli += Number(r.Falli_commessi) || 0;
+    m.Cart += (Number(r.Gialli) || 0) + (Number(r.Rossi) || 0);
+  }
+  if (calendar) {
+    for (const c of teamCornerMatches(calendar, teamId, segmento)) {
+      const m = oppByMatch[c.Match_ID] || (oppByMatch[c.Match_ID] = { Tiri: 0, SOT: 0, Falli: 0, Cart: 0 });
+      m.Corner = c.CornerConcessi;
+    }
+  }
+  return ownTotals
+    .filter((own) => oppByMatch[own.Match_ID])
+    .map((own) => ({ Match_ID: own.Match_ID, own, opp: oppByMatch[own.Match_ID] }));
+}
+
+// Record duello su una metrica: quante volte il proprio totale ha superato
+// quello dell'avversario nella stessa partita (salta le partite senza un
+// valore valido per entrambi i lati).
+function teamDuelRecord(duels, key) {
+  const valid = duels.filter((d) => d.own[key] != null && d.opp[key] != null);
+  const n = valid.length;
+  const wins = valid.filter((d) => d.own[key] > d.opp[key]).length;
+  return { n, wins, rate: n ? wins / n : null };
+}
+
+// Proiezione moltiplicativa: media di lega × forza attacco (proprio totale
+// medio / media lega, con shrinkage) × debolezza difesa avversario (concesso
+// medio dall'avversario / media lega, con shrinkage). Shrinkage verso 1.0 sui
+// campioni piccoli, stesso k della Baseline (SHRINK_K=3) per coerenza.
+function multiplicativeProjection(matchLog, teamId, venue, oppTeamId, oppVenue, key, leagueAvg, calendar) {
+  const ownTotals = computeTeamMatchTotals(matchLog, teamId, venue, calendar)
+    .map((m) => m[key])
+    .filter((v) => v != null);
+  const nA = ownTotals.length;
+  const ownAvgA = nA ? ownTotals.reduce((a, b) => a + b, 0) / nA : null;
+
+  let concedeVals;
+  if (key === 'Corner' && calendar) {
+    concedeVals = teamCornerMatches(calendar, oppTeamId, oppVenue)
+      .map((c) => c.CornerConcessi)
+      .filter((v) => v != null);
+  } else {
+    const concedeRows = teamRowsSubiti(matchLog, oppTeamId, oppVenue);
+    const byMatch = {};
+    for (const r of concedeRows) {
+      const m = byMatch[r.Match_ID] || (byMatch[r.Match_ID] = { Tiri: 0, SOT: 0, Falli: 0, Cart: 0 });
+      m.Tiri += Number(r.Tiri) || 0;
+      m.SOT += Number(r.Tiri_in_porta) || 0;
+      m.Falli += Number(r.Falli_commessi) || 0;
+      m.Cart += (Number(r.Gialli) || 0) + (Number(r.Rossi) || 0);
+    }
+    concedeVals = Object.values(byMatch).map((m) => m[key]);
+  }
+  const nB = concedeVals.length;
+  const concedeAvgB = nB ? concedeVals.reduce((a, b) => a + b, 0) / nB : null;
+
+  if (leagueAvg == null) return { ownAvgA, nA, concedeAvgB, nB, projection: null };
+  const shrink = (avg, n) => (avg == null || !leagueAvg ? 1 : 1 + (avg / leagueAvg - 1) * (n / (n + SHRINK_K)));
+  const projection = leagueAvg * shrink(ownAvgA, nA) * shrink(concedeAvgB, nB);
+  return { ownAvgA, nA, concedeAvgB, nB, projection };
+}
+
+// Giorni di riposo prima della partita indicata: differenza in giorni tra la
+// Data della partita e la Data della partita precedente della stessa
+// squadra (qualunque venue) — null se non c'è una partita precedente.
+function restDaysBefore(calendar, teamId, dataPartita) {
+  const precedenti = calendar.filter(
+    (r) => (r.Home_ID === teamId || r.Away_ID === teamId) && r.Data < dataPartita
+  );
+  if (!precedenti.length) return null;
+  precedenti.sort((a, b) => b.Data.localeCompare(a.Data));
+  const d1 = new Date(precedenti[0].Data);
+  const d2 = new Date(dataPartita);
+  return Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+}
+
+// STREAK basate sul RISULTATO (segna/subisce/vince/perde/pareggia): calcolate
+// sulle sole partite CONCLUSA con Home_Score/Away_Score compilati, ordinate
+// dalla più recente, contando quante di fila (a partire dall'ultima) rispettano
+// la condizione — si ferma alla prima partita che la rompe.
+function computeTeamStreak(calendar, teamId, venue, key, n) {
+  let rows = calendar.filter(
+    (r) =>
+      (r.Home_ID === teamId || r.Away_ID === teamId) &&
+      r.Stato === 'CONCLUSA' &&
+      r.Home_Score != null &&
+      r.Away_Score != null
+  );
+  if (venue !== 'TOTALE') {
+    rows = rows.filter((r) => (venue === 'HOME' ? r.Home_ID === teamId : r.Away_ID === teamId));
+  }
+  rows.sort((a, b) => b.Data.localeCompare(a.Data)); // più recente prima
+  const partite = rows.length;
+
+  let streak = 0;
+  for (const r of rows) {
+    const isHome = r.Home_ID === teamId;
+    const golFatti = isHome ? r.Home_Score : r.Away_Score;
+    const golSubiti = isHome ? r.Away_Score : r.Home_Score;
+    let cond;
+    switch (key) {
+      case 'segna': cond = golFatti > 0; break;
+      case 'nonSegna': cond = golFatti === 0; break;
+      case 'subisce': cond = golSubiti > 0; break;
+      case 'nonSubisce': cond = golSubiti === 0; break;
+      case 'nonVince': cond = golFatti <= golSubiti; break;
+      case 'nonPerde': cond = golFatti >= golSubiti; break;
+      case 'nonPareggia': cond = golFatti !== golSubiti; break;
+      case 'noNGolFatti': cond = golFatti !== n; break; // "non segna ESATTAMENTE n gol da..."
+      case 'noNGolSubiti': cond = golSubiti !== n; break;
+      case 'noOver25': cond = golFatti + golSubiti <= 2; break; // partita NON sopra i 2.5 gol totali
+      case 'noUnder25': cond = golFatti + golSubiti >= 3; break; // partita NON sotto i 2.5 gol totali
+      default: cond = false;
+    }
+    if (cond) streak++;
+    else break;
+  }
+  return { streak, partite };
+}
+
+// Normalizzazione nome arbitro: l'inserimento è manuale, quindi lo stesso
+// arbitro può comparire con maiuscole/minuscole diverse ("ROSSI", "Rossi",
+// "rossi") — vanno raggruppati come UNA persona, non contati come arbitri
+// diversi. normalizeArbitroKey fa il confronto (case/spazi-insensitive),
+// titleCaseArbitro sceglie una forma di visualizzazione unica e leggibile.
+function normalizeArbitroKey(nome) {
+  return String(nome || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*\.\s*/g, '.'); // uniforma "J.L." vs "J. L." vs "J . L ."
+}
+function titleCaseArbitro(nome) {
+  return String(nome || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .split(' ')
+    .map((w) => w.replace(/(^|\.)([a-zà-ÿ])/g, (m, sep, ch) => sep + ch.toUpperCase()))
+    .join(' ');
+}
+
+// Un nome arbitro inserito a mano può contenere errori di battitura/copia —
+// in particolare un orario copiato per sbaglio nella colonna sbagliata
+// (es. "h. 20.45"). Non è un nome valido: niente sequenza di 2+ lettere, o
+// è letteralmente un orario. Le righe non valide vengono escluse dal conteggio
+// invece di comparire come un "arbitro" fantasma.
+function isArbitroNomeValido(nome) {
+  const s = String(nome || '').trim();
+  if (!s) return false;
+  if (/^h\.?\s*\d{1,2}[.:]\d{2}$/i.test(s)) return false;
+  if (/^\d{1,2}[.:]\d{2}$/.test(s)) return false;
+  return /[a-zà-ÿ]{2,}/i.test(s);
+}
+
+// ---------------------------------------------------------------------------
+// CARTELLINO IN RITARDO (pannello "Serie & Ritardi"): un giocatore che fa
+// molti falli ma non prende un giallo da un po' — "in ritardo" per
+// un'ammonizione. Finestra di ritardo = dall'ultimo cartellino (giallo o
+// rosso) in poi, su tutta la stagione (non spezzata per casa/trasferta,
+// perché è una striscia continua nel tempo).
+// ---------------------------------------------------------------------------
+// teamFiltro: se passato, limita la finestra di ritardo alle sole presenze
+// con quella squadra (stesso principio già applicato a computePlayerStats —
+// un giocatore appena trasferito non deve trascinarsi minuti/falli fatti con
+// la maglia precedente dentro la valutazione per la squadra attuale).
+function computeCardDrought(matchLog, playerId, teamFiltro) {
+  let rows = matchLog.filter((r) => r.Player_ID === playerId);
+  if (teamFiltro) rows = rows.filter((r) => r.Team_ID === teamFiltro);
+  rows = rows.sort((a, b) => a.Player_Seq - b.Player_Seq);
+  let lastCardSeq = 0; // 0 = mai ammonito/espulso in stagione -> finestra = tutte le presenze
+  for (const r of rows) {
+    if ((Number(r.Gialli) || 0) >= 1 || (Number(r.Rossi) || 0) >= 1) lastCardSeq = r.Player_Seq;
+  }
+  const finestra = rows.filter((r) => r.Player_Seq > lastCardSeq);
+  const minuti = finestra.reduce((a, r) => a + (Number(r.Minuti) || 0), 0);
+  const falli = finestra.reduce((a, r) => a + (Number(r.Falli_commessi) || 0), 0);
+  const partite = finestra.length;
+  const indiceFalli = minuti ? (falli / minuti) * 90 : null;
+  return { minuti, falli, partite, indiceFalli };
+}
+
+// Relazione reale (non stimata) tra falli commessi IN UNA PARTITA e
+// probabilità di essere ammonito/espulso IN QUELLA STESSA PARTITA, calcolata
+// su tutte le presenze di MATCH_LOG (tutta la lega). Bucket per numero intero
+// di falli, "5+" accorpa i casi rari (poche righe sopra i 5 falli a partita).
+function computeFoulCardProbabilityTable(matchLog) {
+  const buckets = {};
+  for (const r of matchLog) {
+    const f = Math.round(Number(r.Falli_commessi) || 0);
+    const key = f >= 5 ? '5+' : String(f);
+    if (!buckets[key]) buckets[key] = { n: 0, carded: 0 };
+    buckets[key].n++;
+    if ((Number(r.Gialli) || 0) >= 1 || (Number(r.Rossi) || 0) >= 1) buckets[key].carded++;
+  }
+  const table = {};
+  for (const key in buckets) table[key] = buckets[key].n ? buckets[key].carded / buckets[key].n : null;
+  return table;
+}
+
+// Stima la probabilità di ammonizione per un giocatore dato il suo indice
+// falli/90 nella finestra di ritardo, guardando la riga del bucket più vicino
+// nella tabella reale (arrotonda all'intero, "5+" per 5 o più).
+function estimateCardProbability(avgFalli, probTable) {
+  if (avgFalli == null || !Number.isFinite(avgFalli)) return null;
+  const f = Math.max(0, Math.round(avgFalli));
+  const key = f >= 5 ? '5+' : String(f);
+  if (probTable[key] != null) return probTable[key];
+  const disponibili = Object.keys(probTable).filter((k) => probTable[k] != null);
+  if (!disponibili.length) return null;
+  const numOf = (k) => (k === '5+' ? 5 : Number(k));
+  disponibili.sort((a, b) => Math.abs(numOf(a) - f) - Math.abs(numOf(b) - f));
+  return probTable[disponibili[0]];
+}
+
+// ---------------------------------------------------------------------------
+// ARBITRI — statistiche aggregate per arbitro: falli fischiati e cartellini
+// mostrati per partita diretta, con split "squadra di casa" vs "squadra in
+// trasferta" (bias arbitrale casa/trasferta), calcolati sui dati grezzi di
+// MATCH_LOG. NESSUNA soglia minima blocca il calcolo — a differenza dei rank
+// squadra/ruolo — ma il numero di partite dirette (N) va SEMPRE mostrato
+// accanto al valore: con 1-2 partite dirette il numero non è una media
+// affidabile, è il dato grezzo di poche gare travestito da statistica.
+// ---------------------------------------------------------------------------
+function computeArbitroStats(matchLog, arbitri, arbitro) {
+  const targetKey = normalizeArbitroKey(arbitro);
+  const matchIds = arbitri.filter((a) => normalizeArbitroKey(a.Arbitro) === targetKey).map((a) => a.Match_ID);
+  const nPartite = matchIds.length;
+  const rowsCasa = filterRows(matchLog, (r) => matchIds.includes(r.Match_ID) && r.Venue === 'H');
+  const rowsTrasferta = filterRows(matchLog, (r) => matchIds.includes(r.Match_ID) && r.Venue === 'A');
+
+  const avg = (rows, col, n) => (n ? sum(rows, col) / n : null);
+  const cartellini = (rows) => sum(rows, 'Gialli') + sum(rows, 'Rossi');
+
+  return {
+    Arbitro: titleCaseArbitro(arbitro),
+    N_Partite: nPartite,
+    Falli_Casa_Medi: avg(rowsCasa, 'Falli_commessi', nPartite),
+    Falli_Trasferta_Medi: avg(rowsTrasferta, 'Falli_commessi', nPartite),
+    Falli_Totali_Medi: nPartite
+      ? (sum(rowsCasa, 'Falli_commessi') + sum(rowsTrasferta, 'Falli_commessi')) / nPartite
+      : null,
+    Cartellini_Casa_Medi: nPartite ? cartellini(rowsCasa) / nPartite : null,
+    Cartellini_Trasferta_Medi: nPartite ? cartellini(rowsTrasferta) / nPartite : null,
+    Cartellini_Totali_Medi: nPartite ? (cartellini(rowsCasa) + cartellini(rowsTrasferta)) / nPartite : null,
+  };
+}
+
+// Statistiche per tutti gli arbitri presenti nel foglio ARBITRI, una riga per
+// arbitro — deduplicati per nome normalizzato (non per stringa esatta), così
+// varianti di maiuscole/minuscole dello stesso arbitro non vengono contate
+// come persone diverse. Il nome mostrato è la prima occorrenza, in forma
+// Title Case.
+function computeAllArbitroStats(matchLog, arbitri) {
+  const canonici = new Map(); // chiave normalizzata -> nome da mostrare
+  for (const a of arbitri) {
+    if (!isArbitroNomeValido(a.Arbitro)) continue;
+    const key = normalizeArbitroKey(a.Arbitro);
+    if (key && !canonici.has(key)) canonici.set(key, titleCaseArbitro(a.Arbitro));
+  }
+  return [...canonici.values()].map((nome) => computeArbitroStats(matchLog, arbitri, nome));
+}
+
+// ============================================================================
+// MODELLO v2 — proiezione giocatore (parametri scelti con backtest rolling-origin
+// su data.json, giornate 2-5 previste con le precedenti; vedi BACKTEST.md).
+//
+// Idea: stima per minuto "tirata" verso la media di lega del RUOLO, con peso
+// proporzionale ai minuti giocati dal giocatore; fattore avversario per ruolo
+// molto smorzato; minuti attesi separati dal tasso. Un giocatore NON viene mai
+// escluso: se non ha dati vale la media del ruolo (e l'affidabilita' e' "bassa").
+// ============================================================================
+const MODEL_PARAMS = {
+  K_MIN: 600,   // pseudo-minuti del prior di ruolo (~6,7 partite intere). Ottimo ~450-720 nel backtest
+  // Fattore avversario a due livelli (entrambi i pesi crescono da soli col campione, nessuna taratura manuale):
+  //  - SQUADRA: concessione totale dell'avversario (tutti i ruoli) vs media di lega; peso = n/(n+K_OPP_TEAM), n = partite dell'avversario
+  //  - RUOLO: scostamento ulteriore dello stesso ruolo; peso = minuti/(minuti+K_OPP), molto smorzato
+  K_OPP_TEAM: 6,   // partite-equivalenti (backtest: ottimo 3-6, ~45% a 5 partite)
+  K_OPP: 6000,     // pseudo-minuti del livello ruolo (segnale debole, cresce con la stagione)
+  OPP_TEAM_METRICS: ['Tiri', 'SOT', 'FC', 'FD'],
+  // sovradispersione extra-Poisson stimata sulle presenze (var = mu + alpha*mu^2)
+  ALPHA: { Tiri: 0.18, SOT: 0.16, FC: 0.06, FD: 0.02, Cart: 0 },
+  MIN_AFFIDABILITA_ALTA: 450,   // minuti del giocatore (5 partite intere)
+  MIN_AFFIDABILITA_MEDIA: 180,  // 2 partite intere
+  MIN_HITRATE: 60,              // l'hit rate usa solo presenze con almeno 60'
+  // sovradispersione dei TOTALI di squadra (100 squadra-partita; include anche differenze tra squadre, quindi e' un limite alto)
+  TEAM_ALPHA: { Tiri: 0.135, SOT: 0.037, Falli: 0.039, Cart: 0.01, Corner: 0.224 },
+  K_TEAM: 4,                    // partite-equivalenti per il fattore forza-squadra sul prior (backtest: ottimo 2-8)
+  TEAM_FACTOR_METRICS: ['Tiri', 'SOT', 'FC'], // dove migliora la previsione; su FD/Cart no
+};
+const MODEL_METRICS = ['Tiri', 'SOT', 'FC', 'FD', 'Cart'];
+const METRIC_COL = { Tiri: 'Tiri', SOT: 'Tiri_in_porta', FC: 'Falli_commessi', FD: 'Falli_subiti' };
+function metricValue(r, m) {
+  if (m === 'Cart') return (Number(r.Gialli) || 0) + (Number(r.Rossi) || 0);
+  return Number(r[METRIC_COL[m]]) || 0;
+}
+
+// Aggregati di lega: per ruolo, per (avversario, ruolo), minuti medi titolari/
+// subentrati e rapporto totale-squadra / solo-titolari (per stimare la panchina).
+function buildLeagueModel(matchLog) {
+  const role = {}, opp = {}, teamTot = {}, teamMatches = {}, oppT = {}, oppMatches = {}, lgAll = { min: 0 };
+  const roleV = {}, oppRV = {}, oppTV = {}, oppMatchesV = {}, lgAllV = {}; // stessi aggregati divisi per venue del GIOCATORE (H casa, A trasferta)
+  let stMin = 0, stN = 0, sbMin = 0, sbN = 0;
+  const shareAll = {}, shareSt = {};
+  for (const m of MODEL_METRICS) { shareAll[m] = 0; shareSt[m] = 0; }
+  const add = (obj, key, r) => {
+    const o = obj[key] || (obj[key] = { min: 0 });
+    o.min += Number(r.Minuti) || 0;
+    for (const m of MODEL_METRICS) o[m] = (o[m] || 0) + metricValue(r, m);
+  };
+  for (const r of matchLog) {
+    add(role, r.Posizione_Analitica, r);
+    add(opp, r.Opp_ID + '|' + r.Posizione_Analitica, r);
+    add(oppT, r.Opp_ID, r);
+    add(roleV, r.Posizione_Analitica + '|' + r.Venue, r);
+    add(oppRV, r.Opp_ID + '|' + r.Posizione_Analitica + '|' + r.Venue, r);
+    add(oppTV, r.Opp_ID + '|' + r.Venue, r);
+    add(lgAllV, r.Venue, r);
+    (oppMatchesV[r.Opp_ID + '|' + r.Venue] || (oppMatchesV[r.Opp_ID + '|' + r.Venue] = new Set())).add(r.Match_ID);
+    add({ L: lgAll }, 'L', r);
+    (oppMatches[r.Opp_ID] || (oppMatches[r.Opp_ID] = new Set())).add(r.Match_ID);
+    const tt = teamTot[r.Team_ID] || (teamTot[r.Team_ID] = {});
+    for (const m of MODEL_METRICS) tt[m] = (tt[m] || 0) + metricValue(r, m);
+    (teamMatches[r.Team_ID] || (teamMatches[r.Team_ID] = new Set())).add(r.Match_ID);
+    if (r.Titolare === 'Sì') { stMin += Number(r.Minuti) || 0; stN++; } else { sbMin += Number(r.Minuti) || 0; sbN++; }
+    for (const m of MODEL_METRICS) { const v = metricValue(r, m); shareAll[m] += v; if (r.Titolare === 'Sì') shareSt[m] += v; }
+  }
+  const benchFactor = {};
+  for (const m of MODEL_METRICS) benchFactor[m] = shareSt[m] ? shareAll[m] / shareSt[m] : 1;
+  // media di lega per squadra-partita (base del fattore forza-squadra)
+  const nTM = Object.values(teamMatches).reduce((a, s2) => a + s2.size, 0);
+  const lgPerTeamMatch = {};
+  for (const m of MODEL_METRICS) {
+    let t = 0; for (const k in teamTot) t += teamTot[k][m] || 0;
+    lgPerTeamMatch[m] = nTM ? t / nTM : null;
+  }
+  return {
+    roleV, oppRV, oppTV, lgAllV, oppNV: Object.fromEntries(Object.entries(oppMatchesV).map(([k, v]) => [k, v.size])),
+    role, opp, oppT, lgAll, oppN: Object.fromEntries(Object.entries(oppMatches).map(([k, v]) => [k, v.size])),
+    teamTot, teamN: Object.fromEntries(Object.entries(teamMatches).map(([k, v]) => [k, v.size])), lgPerTeamMatch,
+    startMinMean: stN ? stMin / stN : 88,
+    subMinMean: sbN ? sbMin / sbN : 25,
+    benchFactor, // moltiplicatore "totale squadra / solo titolari" osservato in lega
+  };
+}
+
+function rate90Of(agg, m) { return agg && agg.min ? (agg[m] / agg.min) * 90 : null; }
+
+// Righe di un giocatore con la squadra attuale (niente mescolanza di maglie).
+function playerRows(matchLog, playerId, teamId) {
+  return matchLog.filter((r) => r.Player_ID === playerId && (!teamId || r.Team_ID === teamId));
+}
+
+// Tasso/90 stimato: (X + prior*K/90) / ((minuti + K)/90). Con 0 minuti = prior.
+function teamStrengthFactor(model, teamId, m) {
+  if (!MODEL_PARAMS.TEAM_FACTOR_METRICS.includes(m)) return 1;
+  const n = model.teamN[teamId], lg = model.lgPerTeamMatch[m];
+  if (!n || !lg) return 1;
+  const ratio = model.teamTot[teamId][m] / n / lg;
+  return 1 + (ratio - 1) * (n / (n + MODEL_PARAMS.K_TEAM));
+}
+
+function shrunkRate90(model, rows, ruolo, m, teamId) {
+  let prior = rate90Of(model.role[ruolo], m);
+  if (prior != null && teamId) prior *= teamStrengthFactor(model, teamId, m);
+  let X = 0, mn = 0;
+  for (const r of rows) { X += metricValue(r, m); mn += Number(r.Minuti) || 0; }
+  if (prior == null) return { rate90: mn ? (X / mn) * 90 : null, prior90: null, minutes: mn, wPlayer: 1 };
+  const K = MODEL_PARAMS.K_MIN;
+  return { rate90: (X + (prior * K) / 90) / ((mn + K) / 90), prior90: prior, minutes: mn, wPlayer: mn / (mn + K) };
+}
+
+// Fattore avversario a due livelli. Squadra: quanto l'avversario concede in totale
+// (tutti i ruoli) rispetto alla lega. Ruolo: scostamento ulteriore dello stesso ruolo,
+// molto piu' smorzato. Pesi crescenti col campione (nessuna taratura periodica).
+function opponentFactor(model, oppId, ruolo, m, pv) {
+  // pv ('H' | 'A'): se presente usa solo le partite in cui i giocatori affrontavano l'avversario nello stesso venue
+  // di questa partita, confrontate con la lega nello stesso venue. Il campione e' piu' piccolo e i pesi
+  // (n/(n+K)) si abbassano da soli.
+  let fTeam = 1, rTeam = null, wTeam = 0;
+  const n = pv ? model.oppNV[oppId + '|' + pv] : model.oppN[oppId], at = pv ? model.oppTV[oppId + '|' + pv] : model.oppT[oppId], lg = rate90Of(pv ? model.lgAllV[pv] : model.lgAll, m);
+  if (MODEL_PARAMS.OPP_TEAM_METRICS.includes(m) && n && at && at.min && lg) {
+    rTeam = rate90Of(at, m) / lg;
+    wTeam = n / (n + MODEL_PARAMS.K_OPP_TEAM);
+    fTeam = 1 + (rTeam - 1) * wTeam;
+  }
+  let fRole = 1, rRole = null, wRole = 0, minutes = 0;
+  const a = pv ? model.oppRV[oppId + '|' + ruolo + '|' + pv] : model.opp[oppId + '|' + ruolo], prior = rate90Of(pv ? model.roleV[ruolo + '|' + pv] : model.role[ruolo], m);
+  if (a && a.min && prior) {
+    rRole = rate90Of(a, m) / prior;
+    wRole = a.min / (a.min + MODEL_PARAMS.K_OPP);
+    fRole = 1 + (rRole - 1) * wRole;
+    minutes = a.min;
+  }
+  return { factor: fTeam * fRole, factorTeam: fTeam, factorRole: fRole, ratio: rRole, ratioTeam: rTeam,
+           minutes, weight: wRole, weightTeam: wTeam, matches: n || 0 };
+}
+
+// Minuti attesi: media delle proprie presenze nello stesso ruolo di impiego
+// (titolare/subentrato) se ce n'e' almeno una, altrimenti media di lega.
+// Per i subentrati nel backtest la media di lega e' piu' stabile di quella personale.
+function expectedMinutes(model, rows, titolare) {
+  if (titolare) {
+    const st = rows.filter((r) => r.Titolare === 'Sì');
+    if (st.length) return st.reduce((a, r) => a + (Number(r.Minuti) || 0), 0) / st.length;
+    return model.startMinMean;
+  }
+  return model.subMinMean;
+}
+
+function reliabilityOf(minutes) {
+  if (minutes >= MODEL_PARAMS.MIN_AFFIDABILITA_ALTA) return 'alta';
+  if (minutes >= MODEL_PARAMS.MIN_AFFIDABILITA_MEDIA) return 'media';
+  return 'bassa';
+}
+
+// Proiezione completa di un giocatore su una metrica, PER QUESTA PARTITA.
+// player = { id, team, ruolo }; opp = Team_ID avversario; titolare = bool.
+function projectPlayer(model, matchLog, player, oppId, titolare, m, pv) {
+  const rows = playerRows(matchLog, player.id, player.team);
+  const base = shrunkRate90(model, rows, player.ruolo, m, player.team);
+  const of = opponentFactor(model, oppId, player.ruolo, m, pv);
+  const expMin = expectedMinutes(model, rows, titolare);
+  const rate90 = base.rate90 == null ? null : base.rate90 * of.factor;
+  return {
+    metric: m,
+    presenze: rows.length,
+    minutiStagione: base.minutes,
+    baseline90: base.rate90,       // tasso/90 tirato verso il ruolo (senza avversario)
+    prior90: base.prior90,         // media di lega del ruolo
+    pesoGiocatore: base.wPlayer,   // 0 = tutto ruolo, 1 = tutto giocatore
+    fattoreAvversario: of.factor,  // squadra x ruolo
+    fattoreSquadra: of.factorTeam, fattoreRuolo: of.factorRole,
+    pesoSquadra: of.weightTeam, pesoRuolo: of.weight, rapportoSquadra: of.ratioTeam, partiteAvversario: of.matches,
+    rapportoGrezzoAvversario: of.ratio,
+    minutiAvversarioRuolo: of.minutes,
+    rate90,                        // baseline90 * fattore
+    minutiAttesi: expMin,
+    mu: rate90 == null ? null : (rate90 * expMin) / 90, // valore atteso in questa partita
+    affidabilita: reliabilityOf(base.minutes),
+  };
+}
+
+// --- Distribuzioni: Poisson (alpha=0) e Binomiale Negativa (var = mu + alpha*mu^2)
+function pmfNB(k, mu, alpha) {
+  if (mu <= 0) return k === 0 ? 1 : 0;
+  if (!alpha) { // Poisson
+    let p = Math.exp(-mu);
+    for (let i = 1; i <= k; i++) p *= mu / i;
+    return p;
+  }
+  const r = 1 / alpha, p0 = r / (r + mu); // P(0) = p0^r
+  let pk = Math.pow(p0, r);
+  for (let i = 0; i < k; i++) pk *= ((r + i) / (i + 1)) * (1 - p0);
+  return pk;
+}
+// P(X >= k): k = soglia intera. "Over 2,5" = P(X>=3); "Under 2,5" = 1 - P(X>=3).
+function probAtLeast(mu, k, metric) {
+  return probAtLeastAlpha(mu, k, MODEL_PARAMS.ALPHA[metric] || 0);
+}
+// Variante con alpha esplicito (usata per i totali di squadra: TEAM_ALPHA).
+function probAtLeastAlpha(mu, k, a) {
+  if (mu == null || !Number.isFinite(mu)) return null;
+  if (k <= 0) return 1;
+  let cdf = 0;
+  for (let i = 0; i < k; i++) cdf += pmfNB(i, mu, a);
+  return Math.max(0, Math.min(1, 1 - cdf));
+}
+function minOddsFromProb(p) { return p && p > 0 ? 1 / p : null; }
+
+// Hit rate di un giocatore su soglia intera k (k o piu'), solo presenze con
+// almeno MIN_HITRATE minuti, con intervallo di Wilson. Mostrare SEMPRE n.
+function playerHitRateK(rows, metric, k) {
+  const valid = rows.filter((r) => (Number(r.Minuti) || 0) >= MODEL_PARAMS.MIN_HITRATE);
+  const n = valid.length;
+  const hits = valid.filter((r) => metricValue(r, metric) >= k).length;
+  const rate = n ? hits / n : null;
+  const [lo, hi] = wilsonInterval(rate, n);
+  return { n, hits, rate, lo, hi };
+}
+
+// Cartellini attesi in una partita dai falli attesi: falli * (cartellini per fallo
+// di lega). Poi Poisson: P(almeno 1) = 1 - exp(-lambda).
+function cardsPerFoulLeague(matchLog) {
+  let c = 0, f = 0;
+  for (const r of matchLog) { c += metricValue(r, 'Cart'); f += metricValue(r, 'FC'); }
+  return f ? c / f : null;
+}
+function probCardFromFouls(expFouls, cardsPerFoul) {
+  if (expFouls == null || cardsPerFoul == null) return null;
+  return 1 - Math.exp(-expFouls * cardsPerFoul);
+}
+
+// Totale squadra da una formazione. players: [{id, team, ruolo}]. Restituisce
+// somma sui titolari, stima con panchina e il CONTEGGIO dei giocatori contati,
+// cosi' un totale incompleto non passa mai inosservato.
+function projectLineupTotal(model, matchLog, players, oppId, m, extraFactor, pv) {
+  const ef = extraFactor == null ? 1 : extraFactor; // es. fattore arbitro per Falli/Cartellini
+  let sumStarters = 0, counted = 0, lowRel = 0;
+  const rows = [];
+  for (const p of players) {
+    const pr = projectPlayer(model, matchLog, p, oppId, true, m, pv);
+    rows.push({ player: p, proj: pr });
+    if (pr.mu != null) { sumStarters += pr.mu * ef; counted++; if (pr.affidabilita === 'bassa') lowRel++; }
+  }
+  return {
+    metric: m,
+    startersTotal: sumStarters,
+    withBench: sumStarters * (model.benchFactor[m] || 1),
+    counted, expected: players.length, lowReliability: lowRel,
+    complete: counted === players.length && players.length === 11,
+    rows,
+  };
+}
+
+// =============================================================================
+// GENERATORE NARRATIVO — pannello "Analisi partita" nel Matchup Engine.
+// Usa solo funzioni già testate sopra (computeRoleConcessions, projectPlayer,
+// computeTeamStreak, ecc.); qui si limita a orchestrare e a scegliere COSA
+// mostrare (ruolo più bucato, nomi con matchup migliore/peggiore, sequenze
+// per venue). Non introduce nuova logica di calcolo statistico oltre al
+// modello Poisson con shrinkage per i gol (projectGoals), che NON è lo
+// stesso motore testato dei tiri/SOT/falli/cartellini — va trattato con una
+// cautela in più, come dichiarato nel testo generato.
+// =============================================================================
+const NARRATIVE_ROLES = ['Punta centrale', 'Trequartista', 'Esterno/Quinto', 'Centrocampista centrale', 'Terzino', 'Centrale difensivo'];
+
+// Articolo corretto per ogni squadra di Serie A — in italiano calcistico ogni nome di
+// squadra richiede l'articolo ("il Bologna", "l'Inter", "la Juventus"), mai il nome nudo
+// come soggetto di frase né con "di" semplice ("di Bologna" è sbagliato, "del Bologna" è giusto).
+const NARR_TEAM_ART = {
+  Atalanta: 'f_v', Bologna: 'm_c', Cagliari: 'm_c', Como: 'm_c', Fiorentina: 'f_c', Frosinone: 'm_c',
+  Genoa: 'm_c', Inter: 'f_v', Juventus: 'f_c', Lazio: 'f_c', Lecce: 'm_c', Milan: 'm_c', Monza: 'm_c',
+  Napoli: 'm_c', Parma: 'm_c', Roma: 'f_c', Sassuolo: 'm_c', Torino: 'm_c', Udinese: 'f_v', Venezia: 'm_c',
+};
+function narrArtKind(teamName) { return NARR_TEAM_ART[teamName] || 'm_c'; }
+// Articolo determinativo isolato ("il"/"la"/"l'"), con maiuscola se richiesta (inizio frase).
+function narrArt(teamName, cap) {
+  const k = narrArtKind(teamName);
+  const a = k === 'f_v' ? "l'" : k === 'f_c' ? 'la ' : 'il ';
+  return cap ? a.charAt(0).toUpperCase() + a.slice(1) : a;
+}
+// Squadra come soggetto/oggetto con articolo: "il Bologna", "l'Inter", "la Juventus".
+function narrTeam(teamName, cap) { return narrArt(teamName, cap) + teamName; }
+// Forma possessiva "del/dell'/della X", per sostituire ogni "di X" errato.
+function narrTeamOf(teamName) {
+  const k = narrArtKind(teamName);
+  const p = k === 'f_v' ? "dell'" : k === 'f_c' ? 'della ' : 'del ';
+  return p + teamName;
+}
+// Forma "dal/dall'/dalla X" (complemento d'agente), per sostituire ogni "da X" errato.
+function narrTeamDa(teamName) {
+  const k = narrArtKind(teamName);
+  const p = k === 'f_v' ? "dall'" : k === 'f_c' ? 'dalla ' : 'dal ';
+  return p + teamName;
+}
+
+// Media di lega di quanto un RUOLO specifico concede quando una squadra gioca nel venue V —
+// stesso identico calcolo di narrWeakestRoleExtra ma mediato su tutte le squadre col campione
+// minimo, per poter distinguere una VERA debolezza (sopra media) da un dato solo "il meno buono
+// tra i propri ruoli" ma comunque nella norma.
+function narrLeagueRoleAvg(matchLog, ruolo, venueLetter, metricKey) {
+  const key = metricKey || 'Tiri_Concessi_90';
+  const teamIds = [...new Set(matchLog.map((r) => r.Team_ID))];
+  const segmento = venueLetter === 'H' ? 'AWAY' : 'HOME';
+  let s = 0, n = 0;
+  for (const t of teamIds) {
+    const partite = narrPartiteInVenue(matchLog, t, venueLetter);
+    if (!partite) continue;
+    const row = computeRoleConcessions(matchLog, t, segmento, ruolo, partite);
+    if (row.N_Prestazioni_Ruolo >= 3 && row[key] != null) { s += row[key]; n++; }
+  }
+  return n ? s / n : null;
+}
+
+function narrStandingsTable(calendar) {
+  const played = calendar.filter((c) => c.Stato === 'CONCLUSA' && c.Home_Score !== '' && c.Home_Score != null);
+  const t = {};
+  const ensure = (id, name) => { if (!t[id]) t[id] = { id, name, pts: 0, gf: 0, ga: 0, w: 0, d: 0, l: 0, pg: 0 }; };
+  for (const m of played) {
+    ensure(m.Home_ID, m.Home); ensure(m.Away_ID, m.Away);
+    const hs = Number(m.Home_Score), as = Number(m.Away_Score);
+    t[m.Home_ID].gf += hs; t[m.Home_ID].ga += as; t[m.Home_ID].pg++;
+    t[m.Away_ID].gf += as; t[m.Away_ID].ga += hs; t[m.Away_ID].pg++;
+    if (hs > as) { t[m.Home_ID].pts += 3; t[m.Home_ID].w++; t[m.Away_ID].l++; }
+    else if (hs < as) { t[m.Away_ID].pts += 3; t[m.Away_ID].w++; t[m.Home_ID].l++; }
+    else { t[m.Home_ID].pts += 1; t[m.Away_ID].pts += 1; t[m.Home_ID].d++; t[m.Away_ID].d++; }
+  }
+  const arr = Object.values(t).sort((a, b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga));
+  arr.forEach((x, i) => (x.pos = i + 1));
+  return arr;
+}
+
+function narrVenueRecord(calendar, teamId, venue) {
+  const rows = calendar.filter((c) => c.Stato === 'CONCLUSA' && c.Home_Score !== '' && c.Home_Score != null &&
+    (venue === 'H' ? c.Home_ID === teamId : c.Away_ID === teamId));
+  let w = 0, d = 0, l = 0, gf = 0, ga = 0;
+  for (const r of rows) {
+    const isHome = r.Home_ID === teamId;
+    const f = Number(isHome ? r.Home_Score : r.Away_Score), a = Number(isHome ? r.Away_Score : r.Home_Score);
+    gf += f; ga += a;
+    if (f > a) w++; else if (f < a) l++; else d++;
+  }
+  return { n: rows.length, w, d, l, gf, ga };
+}
+
+// Ruolo più "bucato" di una squadra nel proprio venue di oggi. segmento passato a
+// computeRoleConcessions è l'OPPOSTO del venue reale (stessa inversione di
+// ARCHITECTURE.md: per "cosa concede X mentre gioca in V" serve segmento = not(V)).
+function narrWeakestRole(matchLog, teamId, venue, teamPartiteInVenue) {
+  const r = narrWeakestRoleMulti(matchLog, teamId, venue, teamPartiteInVenue).primary;
+  return r ? r.row : null;
+}
+
+// Versione multi-metrica: la "vera falla" di una squadra in un venue non è sempre sui
+// tiri concessi — può emergere altrettanto (o più) nettamente sui falli SUBITI da un
+// ruolo avversario (FalliSubiti_Ruolo_90, la vera debolezza disciplinare della squadra).
+// Si valutano entrambe le metriche su tutti i ruoli e si tiene quella con lo scarto
+// relativo (ratio sulla media di lega stesso ruolo/venue) più marcato: così la Chiave
+// di lettura non è forzata sui tiri in ogni partita. candidate = {row, metric, value, avg, ratio}.
+function narrWeakestRoleMulti(matchLog, teamId, venue, teamPartiteInVenue) {
+  const segmento = venue === 'H' ? 'AWAY' : 'HOME';
+  const rows = NARRATIVE_ROLES.map((r) => computeRoleConcessions(matchLog, teamId, segmento, r, teamPartiteInVenue))
+    .filter((x) => x.N_Prestazioni_Ruolo >= 3);
+  if (!rows.length) return { primary: null, secondary: null, sotWeak: null };
+  const cands = [];
+  for (const row of rows) {
+    if (row.Tiri_Concessi_90 != null) {
+      const avg = narrLeagueRoleAvg(matchLog, row.Posizione_Analitica, venue, 'Tiri_Concessi_90');
+      cands.push({ row, metric: 'Tiri', value: row.Tiri_Concessi_90, avg, ratio: avg ? row.Tiri_Concessi_90 / avg : null });
+    }
+    if (row.FalliSubiti_Ruolo_90 != null) {
+      const avg = narrLeagueRoleAvg(matchLog, row.Posizione_Analitica, venue, 'FalliSubiti_Ruolo_90');
+      cands.push({ row, metric: 'Falli', value: row.FalliSubiti_Ruolo_90, avg, ratio: avg ? row.FalliSubiti_Ruolo_90 / avg : null });
+    }
+  }
+  // I falli subiti per ruolo hanno varianza di lega più bassa dei tiri: anche uno scarto modesto
+  // produce un ratio enorme, che altrimenti farebbe vincere i falli quasi sempre invece di "variare"
+  // davvero la chiave come richiesto. Si passa ai falli solo se il loro scarto è CHIARAMENTE più
+  // marcato (almeno il 20% in più) di quello sui tiri dello stesso venue — altrimenti i tiri restano
+  // il riferimento di default, e i falli emergono solo quando sono davvero il segnale più forte.
+  const bestTiri = cands.filter((c) => c.metric === 'Tiri' && c.ratio != null).sort((a, b) => b.ratio - a.ratio)[0] || null;
+  const bestFalli = cands.filter((c) => c.metric === 'Falli' && c.ratio != null).sort((a, b) => b.ratio - a.ratio)[0] || null;
+  let primary;
+  if (bestFalli && (!bestTiri || bestFalli.ratio >= bestTiri.ratio * 1.5)) {
+    primary = bestFalli;
+  } else if (bestTiri) {
+    primary = bestTiri;
+  } else {
+    const byTiri = rows.filter((r) => r.Tiri_Concessi_90 != null).sort((a, b) => b.Tiri_Concessi_90 - a.Tiri_Concessi_90);
+    primary = byTiri[0] ? { row: byTiri[0], metric: 'Tiri', value: byTiri[0].Tiri_Concessi_90, avg: null, ratio: null } : null;
+  }
+  if (!primary) return { primary: null, secondary: null, sotWeak: null };
+  // seconda debolezza: altro ruolo, STESSA metrica del primario, valore vicino (>=75%) — non marginale.
+  const sameMetric = cands.filter((c) => c.metric === primary.metric && c.row.Posizione_Analitica !== primary.row.Posizione_Analitica);
+  const secondCand = sameMetric.sort((a, b) => b.value - a.value)[0];
+  const secondary = secondCand && secondCand.value >= primary.value * 0.75 ? secondCand : null;
+  // la lettura specifica sui tiri IN PORTA ha senso solo quando la falla principale è sui tiri.
+  let sotWeak = null;
+  if (primary.metric === 'Tiri') {
+    const bySot = rows.filter((x) => x.SOT_Concessi_90 != null).sort((a, b) => b.SOT_Concessi_90 - a.SOT_Concessi_90);
+    sotWeak = bySot[0] && bySot[0].Posizione_Analitica !== primary.row.Posizione_Analitica ? bySot[0] : null;
+  }
+  return { primary, secondary, sotWeak };
+}
+
+// Media di una metrica (Corner/Cart/...) sui totali-partita di una squadra in un venue.
+function narrAvgOf(totals, key) {
+  const vs = totals.map((t) => t[key]).filter((v) => v != null);
+  return vs.length ? { avg: vs.reduce((a, b) => a + b, 0) / vs.length, n: vs.length } : null;
+}
+
+function narrPartiteInVenue(matchLog, teamId, venueLetter) {
+  return new Set(matchLog.filter((r) => r.Team_ID === teamId && r.Venue === venueLetter).map((r) => r.Match_ID)).size;
+}
+
+function narrPlayersInRole(rosters, matchLog, teamId, ruolo, minMin) {
+  const roster = rosters.filter((r) => r.Team_ID_Rif === teamId && r.Attivo_SerieA === 'SI' && r.Posizione_Analitica === ruolo);
+  return roster.map((r) => {
+    const min = matchLog.filter((x) => x.Player_ID === r.Player_ID).reduce((a, x) => a + (Number(x.Minuti) || 0), 0);
+    return { id: r.Player_ID, nome: r.Nome_completo, ruolo: r.Posizione_Analitica, min };
+  }).filter((p) => p.min >= minMin).sort((a, b) => b.min - a.min);
+}
+
+function narrShootingEfficiency(matchLog, calendar, teamId, venue) {
+  const totals = computeTeamMatchTotals(matchLog, teamId, venue === 'H' ? 'HOME' : 'AWAY', calendar).filter((m) => m.Tiri > 0);
+  if (!totals.length) return null;
+  const clinical = totals.filter((m) => m.SOT / m.Tiri >= 0.4).length;
+  return { n: totals.length, clinical, totals };
+}
+
+function narrShrink(avg, n, lg) { return avg == null || !lg ? 1 : 1 + (avg / lg - 1) * (n / (n + SHRINK_K)); }
+
+// Proiezione gol con shrinkage — stessa logica di multiplicativeProjection ma
+// su Home_Score/Away_Score di CALENDAR invece che su MATCH_LOG; NON è parte
+// del motore tiri/SOT/falli/cartellini testato, va dichiarato nel testo.
+function narrProjectGoals(calendar, homeId, awayId) {
+  const played = calendar.filter((c) => c.Stato === 'CONCLUSA' && c.Home_Score !== '' && c.Home_Score != null);
+  if (!played.length) return null;
+  const lgHome = played.reduce((a, c) => a + Number(c.Home_Score), 0) / played.length;
+  const lgAway = played.reduce((a, c) => a + Number(c.Away_Score), 0) / played.length;
+  const homeAtt = narrVenueRecord(calendar, homeId, 'H');
+  const awayDef = narrVenueRecord(calendar, awayId, 'A');
+  const awayAtt = narrVenueRecord(calendar, awayId, 'A');
+  const homeDef = narrVenueRecord(calendar, homeId, 'H');
+  const homeAttAvg = homeAtt.n ? homeAtt.gf / homeAtt.n : null;
+  const awayDefAvg = awayDef.n ? awayDef.ga / awayDef.n : null;
+  const awayAttAvg = awayAtt.n ? awayAtt.gf / awayAtt.n : null;
+  const homeDefAvg = homeDef.n ? homeDef.ga / homeDef.n : null;
+  const muHome = lgHome * narrShrink(homeAttAvg, homeAtt.n, lgHome) * narrShrink(awayDefAvg, awayDef.n, lgAway);
+  const muAway = lgAway * narrShrink(awayAttAvg, awayAtt.n, lgAway) * narrShrink(homeDefAvg, homeDef.n, lgHome);
+  return { muHome, muAway, homeAtt, awayAtt, homeDef, awayDef };
+}
+
+function narrFoulCardWatch(matchLog, rosters, teamId) {
+  const roster = rosters.filter((r) => r.Team_ID_Rif === teamId && r.Attivo_SerieA === 'SI');
+  const agg = roster.map((r) => {
+    const rows = matchLog.filter((x) => x.Player_ID === r.Player_ID);
+    const min = rows.reduce((a, x) => a + (Number(x.Minuti) || 0), 0);
+    const falli = rows.reduce((a, x) => a + (Number(x.Falli_commessi) || 0), 0);
+    const gialli = rows.reduce((a, x) => a + (Number(x.Gialli) || 0), 0);
+    const rossi = rows.reduce((a, x) => a + (Number(x.Rossi) || 0), 0);
+    const partite = new Set(rows.map((x) => x.Match_ID)).size;
+    return { nome: r.Nome_completo, min, falli, gialli, rossi, partite, falli90: min ? (falli / min) * 90 : null };
+  });
+  const hotCard = agg.filter((p) => p.min >= 200 && p.gialli >= 2).sort((a, b) => (b.gialli / b.partite) - (a.gialli / a.partite))[0] || null;
+  const dueDiligence = agg.filter((p) => p.min >= 150 && p.gialli === 0 && p.rossi === 0 && p.falli90 != null).sort((a, b) => b.falli90 - a.falli90)[0] || null;
+  return { hotCard, dueDiligence };
+}
+
+function narrStreaksFor(calendar, teamId, venue) {
+  const keys = ['segna', 'subisce', 'nonSubisce', 'nonPerde', 'nonVince', 'nonPareggia'];
+  return keys.map((k) => ({ key: k, ...computeTeamStreak(calendar, teamId, venue, k) })).filter((s) => s.partite >= 2);
+}
+
+// Ruolo difensivo/di centrocampo che tipicamente incontra ciascun ruolo offensivo (approssimazione
+// posizionale, non un dato di marcatura reale — usata solo per proporre incroci individuali
+// plausibili). Comprende anche le coppie speculari (il terzino che si propone trova l'esterno
+// avversario, i due centrocampisti centrali si incontrano direttamente) per avere più candidati.
+const NARR_ROLE_MARCATURA = {
+  'Esterno/Quinto': 'Terzino',
+  'Punta centrale': 'Centrale difensivo',
+  'Trequartista': 'Centrocampista centrale',
+  'Terzino': 'Esterno/Quinto',
+  'Centrocampista centrale': 'Centrocampista centrale',
+};
+
+// Incrocio individuale sui falli: cerca, tra i ruoli offensivi con una controparte difensiva
+// definita, i giocatori che SUBISCONO più falli (FD, atteso in questa partita) il cui marcatore
+// naturale è chi NE COMMETTE più (FC) — tipo "Zaccagni subisce 2,5 falli a partita e gioca vs
+// Celik che ne commette 1". Richiede entrambe le proiezioni sopra una soglia minima per non
+// forzare l'incrocio quando i numeri non dicono nulla. Restituisce FINO A 2 coppie (ruoli
+// diversi, nessun giocatore ripetuto), non solo la migliore, per dare più carne individuale.
+function narrFoulMatchup(model, matchLog, rosters, attackTeamId, attackPv, defendTeamId, defendPv) {
+  const cands = [];
+  for (const role in NARR_ROLE_MARCATURA) {
+    const defRole = NARR_ROLE_MARCATURA[role];
+    const attackers = narrPlayersInRole(rosters, matchLog, attackTeamId, role, 300).slice(0, 3);
+    const defenders = narrPlayersInRole(rosters, matchLog, defendTeamId, defRole, 300).slice(0, 2);
+    if (!attackers.length || !defenders.length) continue;
+    for (const a of attackers) {
+      const fd = projectPlayer(model, matchLog, { id: a.id, team: attackTeamId, ruolo: role }, defendTeamId, true, 'FD', attackPv);
+      if (fd.mu == null || fd.mu < 1.5) continue;
+      for (const def of defenders) {
+        const fc = projectPlayer(model, matchLog, { id: def.id, team: defendTeamId, ruolo: defRole }, attackTeamId, true, 'FC', defendPv);
+        if (fc.mu == null || fc.mu < 1.0) continue;
+        cands.push({ attacker: a, defender: def, role, defRole, fdMu: fd.mu, fcMu: fc.mu, score: fd.mu + fc.mu });
+      }
+    }
+  }
+  cands.sort((a, b) => b.score - a.score);
+  const picked = [];
+  const usedRoles = new Set();
+  for (const c of cands) {
+    if (usedRoles.has(c.role)) continue; // niente due coppie sullo stesso ruolo offensivo
+    picked.push(c);
+    usedRoles.add(c.role);
+    if (picked.length >= 2) break;
+  }
+  return picked;
+}
+
+// Incrocio individuale sui cartellini: un attaccante che subisce molti falli (FD) — quindi
+// spesso al centro di contatti/proteste — contro un difensore già nervoso sui cartellini
+// (ammonito con frequenza, da narrFoulCardWatch.hotCard): due profili che insieme aumentano
+// il rischio di un'ammonizione, non solo una somma statistica scollegata.
+function narrCardMatchup(model, matchLog, rosters, attackTeamId, attackPv, defendTeamId, defendPv, defendFoulWatch) {
+  const hotCard = defendFoulWatch && defendFoulWatch.hotCard;
+  if (!hotCard || hotCard.partite < 2) return null;
+  let best = null;
+  for (const role in NARR_ROLE_MARCATURA) {
+    const defRole = NARR_ROLE_MARCATURA[role];
+    const defenders = narrPlayersInRole(rosters, matchLog, defendTeamId, defRole, 300);
+    if (!defenders.some((p) => p.nome === hotCard.nome)) continue; // il giocatore a rischio deve essere proprio in quel ruolo di marcatura
+    const attackers = narrPlayersInRole(rosters, matchLog, attackTeamId, role, 300).slice(0, 3);
+    for (const a of attackers) {
+      const fd = projectPlayer(model, matchLog, { id: a.id, team: attackTeamId, ruolo: role }, defendTeamId, true, 'FD', attackPv);
+      if (fd.mu == null || fd.mu < 1.5) continue;
+      if (!best || fd.mu > best.fdMu) best = { attacker: a, defender: { nome: hotCard.nome }, role, defRole, fdMu: fd.mu, cardRate: hotCard.gialli / hotCard.partite };
+    }
+  }
+  return best;
+}
+
+// Forma recente (ultime N gare, qualunque venue) — punti a partita e record, per intercettare
+// una squadra in slancio o in calo che il solo dato sul venue di oggi non racconta.
+function narrRecentForm(calendar, teamId, n) {
+  const rows = calendar.filter((r) => (r.Home_ID === teamId || r.Away_ID === teamId) &&
+    r.Stato === 'CONCLUSA' && r.Home_Score !== '' && r.Home_Score != null);
+  rows.sort((a, b) => b.Data.localeCompare(a.Data));
+  const last = rows.slice(0, n);
+  let w = 0, d = 0, l = 0, pts = 0, gf = 0, ga = 0;
+  for (const r of last) {
+    const isHome = r.Home_ID === teamId;
+    const f = Number(isHome ? r.Home_Score : r.Away_Score), a = Number(isHome ? r.Away_Score : r.Home_Score);
+    gf += f; ga += a;
+    if (f > a) { w++; pts += 3; } else if (f < a) { l++; } else { d++; pts += 1; }
+  }
+  return { n: last.length, w, d, l, pts, gf, ga, ppg: last.length ? pts / last.length : null };
+}
+
+function generateMatchNarrative(matchLog, calendar, rosters, match) {
+  const homeId = match.Home_ID, awayId = match.Away_ID;
+  const homeName = match.Home, awayName = match.Away;
+
+  // --- Preview: classifica generale vs venue reale ---
+  const standings = narrStandingsTable(calendar);
+  const sHome = standings.find((s) => s.id === homeId);
+  const sAway = standings.find((s) => s.id === awayId);
+  const homeAtHome = narrVenueRecord(calendar, homeId, 'H');
+  const awayAtAway = narrVenueRecord(calendar, awayId, 'A');
+  const homeAtAway = narrVenueRecord(calendar, homeId, 'A');
+  const awayAtHome = narrVenueRecord(calendar, awayId, 'H');
+
+  // Corner e cartellini medi per venue (stesso schema dei gol, nessun nuovo calcolo:
+  // riusa computeTeamMatchTotals già testato per il Matchup Engine).
+  const homeTotalsHome = computeTeamMatchTotals(matchLog, homeId, 'HOME', calendar);
+  const awayTotalsAway = computeTeamMatchTotals(matchLog, awayId, 'AWAY', calendar);
+  const homeCornerCart = { corner: narrAvgOf(homeTotalsHome, 'Corner'), cart: narrAvgOf(homeTotalsHome, 'Cart') };
+  const awayCornerCart = { corner: narrAvgOf(awayTotalsAway, 'Corner'), cart: narrAvgOf(awayTotalsAway, 'Cart') };
+
+  // "Dominanza fragile": il record di risultato nel venue (V/N/P) confrontato col record del
+  // duello sui tiri partita-su-partita (chi dei due ha tirato di più, stessa gara) — una squadra
+  // può vincere le partite e perdere comunque il duello sui tiri più spesso di quanto vinca.
+  const homeDuelsHome = computeTeamDuelTotals(matchLog, homeId, 'HOME', calendar);
+  const awayDuelsAway = computeTeamDuelTotals(matchLog, awayId, 'AWAY', calendar);
+  const homeShotDuel = teamDuelRecord(homeDuelsHome, 'Tiri');
+  const awayShotDuel = teamDuelRecord(awayDuelsAway, 'Tiri');
+
+  // Mismatch volume/qualità dei tiri: volume = tiri a partita, qualità = quota che arriva in
+  // porta (SOT/Tiri) — confrontato direttamente tra i due venue reali di oggi.
+  const sumVals = (totals, key) => { const vs = totals.map((t) => t[key]).filter((v) => v != null); return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null; };
+  const homeShotProfile = { volume: sumVals(homeTotalsHome, 'Tiri'), sot: sumVals(homeTotalsHome, 'SOT'), n: homeTotalsHome.length };
+  const awayShotProfile = { volume: sumVals(awayTotalsAway, 'Tiri'), sot: sumVals(awayTotalsAway, 'SOT'), n: awayTotalsAway.length };
+  homeShotProfile.qualita = homeShotProfile.volume ? homeShotProfile.sot / homeShotProfile.volume : null;
+  awayShotProfile.qualita = awayShotProfile.volume ? awayShotProfile.sot / awayShotProfile.volume : null;
+
+  // Trend recente: ultime 5 gare giocate, qualunque venue — la forma del momento, non solo il venue di oggi.
+  const homeRecentForm = narrRecentForm(calendar, homeId, 5);
+  const awayRecentForm = narrRecentForm(calendar, awayId, 5);
+
+  // --- Chiave di lettura: ruolo più bucato di ciascuna squadra nel proprio venue (su Tiri
+  // O su Falli subiti dal ruolo, qualunque dei due scarti rispetto alla media di lega sia più
+  // marcato), più un'eventuale seconda debolezza vicina e una debolezza specifica sui tiri in porta ---
+  const homePartiteHome = narrPartiteInVenue(matchLog, homeId, 'H');
+  const awayPartiteAway = narrPartiteInVenue(matchLog, awayId, 'A');
+  const homeWeakX = homePartiteHome ? narrWeakestRoleMulti(matchLog, homeId, 'H', homePartiteHome) : { primary: null, secondary: null, sotWeak: null };
+  const awayWeakX = awayPartiteAway ? narrWeakestRoleMulti(matchLog, awayId, 'A', awayPartiteAway) : { primary: null, secondary: null, sotWeak: null };
+  const homeWeak = homeWeakX.primary ? homeWeakX.primary.row : null;
+  const awayWeak = awayWeakX.primary ? awayWeakX.primary.row : null;
+  const homeWeakMetric = homeWeakX.primary ? homeWeakX.primary.metric : null;
+  const awayWeakMetric = awayWeakX.primary ? awayWeakX.primary.metric : null;
+  // Quanto quel ruolo è DAVVERO sopra la media di lega per lo stesso ruolo/metrica/venue —
+  // distingue una vera falla (ratio alto) dal "meno buono tra i propri ruoli" ma comunque nella norma.
+  const homeWeakRatio = homeWeakX.primary ? homeWeakX.primary.ratio : null;
+  const awayWeakRatio = awayWeakX.primary ? awayWeakX.primary.ratio : null;
+
+  // interprete della squadra ospite che sfrutta il ruolo debole di casa, e viceversa — con numeri
+  // individuali (mu Tiri attesi in questa partita, metrica coerente con la falla sui tiri) invece
+  // del solo nome, così l'incrocio dice qualcosa in più di "gioca in quel ruolo".
+  const modelEarly = buildLeagueModel(matchLog);
+  function withMuTiri(list, teamId, oppId, pv) {
+    return list.map((p) => {
+      const pr = projectPlayer(modelEarly, matchLog, { id: p.id, team: teamId, ruolo: p.ruolo }, oppId, true, 'Tiri', pv);
+      return { ...p, mu: pr.mu };
+    }).sort((a, b) => (b.mu || 0) - (a.mu || 0));
+  }
+  const awayExploiters = homeWeak ? withMuTiri(narrPlayersInRole(rosters, matchLog, awayId, homeWeak.Posizione_Analitica, 300), awayId, homeId, 'A') : [];
+  const homeExploiters = awayWeak ? withMuTiri(narrPlayersInRole(rosters, matchLog, homeId, awayWeak.Posizione_Analitica, 300), homeId, awayId, 'H') : [];
+
+  const shootEff = narrShootingEfficiency(matchLog, calendar, awayId, 'A');
+
+  // --- Nomi che contano: per ogni giocatore si valutano Tiri/SOT/Falli commessi/Falli subiti e si
+  // tiene la metrica dove il giocatore è davvero sopra il proprio ruolo (baseline90/prior90 più alto),
+  // non sempre i tiri. La soglia mostrata è proporzionale al valore atteso (mu): soglia intera =
+  // floor(mu) [minimo 1], riga comunicata = soglia - 0,5 (es. mu=4,14 -> "almeno 3,5"; mu=3,19 -> "almeno 2,5"). ---
+  const model = modelEarly; // stesso modello già costruito sopra per gli exploiters, non ricalcolato
+  function topNames(teamId, oppId, pv, excludeGK) {
+    const roster = rosters.filter((r) => r.Team_ID_Rif === teamId && r.Attivo_SerieA === 'SI' && (!excludeGK || r.Posizione_Analitica !== 'Portiere'));
+    return roster.map((r) => {
+      const rows = matchLog.filter((x) => x.Player_ID === r.Player_ID);
+      const min = rows.reduce((a, x) => a + (Number(x.Minuti) || 0), 0);
+      if (min < 150) return null;
+      const player = { id: r.Player_ID, team: teamId, ruolo: r.Posizione_Analitica };
+      const metricsAll = ['Tiri', 'SOT', 'FC', 'FD'].map((m) => {
+        const p = projectPlayer(model, matchLog, player, oppId, true, m, pv);
+        const ratio = p.baseline90 != null && p.prior90 ? p.baseline90 / p.prior90 : null;
+        return { metric: m, p, ratio };
+      }).filter((x) => x.p.mu != null && x.p.mu > 0);
+      if (!metricsAll.length) return null;
+      const withRatio = metricsAll.filter((x) => x.ratio != null);
+      const standout = withRatio.length
+        ? withRatio.sort((a, b) => b.ratio - a.ratio)[0]
+        : metricsAll.sort((a, b) => b.p.mu - a.p.mu)[0];
+      const tiriEntry = metricsAll.find((x) => x.metric === 'Tiri');
+      const muTiri = tiriEntry ? tiriEntry.p.mu : null;
+      // Arrotondamento alla soglia PIÙ VICINA (non sempre verso il basso): mu=1,99 deve dare
+      // soglia 2 (riga 1,5), non soglia 1 (riga 0,5) come farebbe un floor puro.
+      const soglia = Math.max(1, Math.round(standout.p.mu));
+      return {
+        nome: r.Nome_completo, ruolo: r.Posizione_Analitica, min,
+        mu: muTiri, // resta sui Tiri: usato per ordinamento e per l'incrocio col ruolo debole (volume di tiro)
+        affidabilita: (tiriEntry || standout).p.affidabilita,
+        metric: standout.metric, metricMu: standout.p.mu, metricRatio: standout.ratio,
+        soglia, sogliaLine: soglia - 0.5,
+        pSoglia: probAtLeastAlpha(standout.p.mu, soglia, MODEL_PARAMS.ALPHA[standout.metric] || 0),
+      };
+    }).filter(Boolean).sort((a, b) => (b.mu || 0) - (a.mu || 0));
+  }
+  const homeNames = topNames(homeId, awayId, 'H', true);
+  const awayNames = topNames(awayId, homeId, 'A', true);
+
+  // --- Radar disciplinare (anticipato: serve anche ai matchup individuali qui sotto) ---
+  const foulHome = narrFoulCardWatch(matchLog, rosters, homeId);
+  const foulAway = narrFoulCardWatch(matchLog, rosters, awayId);
+
+  // --- Matchup individuali: più stat, più giocatori, non solo il migliore in assoluto ---
+  // 1) Falli: un attaccante che SUBISCE molti falli (FD) contro il difensore del ruolo che
+  //    tipicamente lo marca, se quel difensore NE COMMETTE molti (FC) — es. Zaccagni/Celik.
+  //    Fino a 2 coppie per lato (ruoli diversi). Soglie: FD atteso >= 1,5, FC atteso >= 1,0.
+  const foulMatchupHome = narrFoulMatchup(model, matchLog, rosters, homeId, 'H', awayId, 'A');
+  const foulMatchupAway = narrFoulMatchup(model, matchLog, rosters, awayId, 'A', homeId, 'H');
+  // 2) Cartellini: lo stesso tipo di attaccante (FD alto) contro un difensore già nervoso sui
+  //    cartellini (ammonito spesso, narrFoulCardWatch.hotCard) nel ruolo che lo marcherebbe.
+  const cardMatchupHome = narrCardMatchup(model, matchLog, rosters, homeId, 'H', awayId, 'A', foulAway);
+  const cardMatchupAway = narrCardMatchup(model, matchLog, rosters, awayId, 'A', homeId, 'H', foulHome);
+
+  // nome principale per squadra: il migliore per mu
+  const homeLead = homeNames[0] || null;
+  const awayLead = awayNames[0] || null;
+  // nome "da cautela": miglior mu la cui concessione di ruolo (lato avversario, venue corretto) ha 0 precedenti
+  function zeroPrecedentPick(names, oppWeakRows) {
+    return names.find((n) => {
+      const row = oppWeakRows.find((r) => r.Posizione_Analitica === n.ruolo);
+      return row && row.N_Prestazioni_Ruolo === 0;
+    }) || null;
+  }
+  // per questo serve concessione per-ruolo completa (non solo la peggiore) di chi difende
+  function allRoleConcessions(teamId, venue, teamPartite) {
+    const segmento = venue === 'H' ? 'AWAY' : 'HOME';
+    return NARRATIVE_ROLES.map((r) => computeRoleConcessions(matchLog, teamId, segmento, r, teamPartite));
+  }
+  const homeDefRows = homePartiteHome ? allRoleConcessions(homeId, 'H', homePartiteHome) : [];
+  const awayDefRows = awayPartiteAway ? allRoleConcessions(awayId, 'A', awayPartiteAway) : [];
+  const cautelaAway = zeroPrecedentPick(awayNames, homeDefRows); // giocatore ospite in ruolo mai visto dalla difesa di casa
+  const cautelaHome = zeroPrecedentPick(homeNames, awayDefRows);
+
+  // nome "matchup sfavorevole": alta affidabilità ma il suo ruolo è il MENO concesso dall'avversario
+  function sfavoritoPick(names, defRows) {
+    const validDef = defRows.filter((r) => r.N_Prestazioni_Ruolo >= 3 && r.Tiri_Concessi_90 != null);
+    if (!validDef.length) return null;
+    const minRow = validDef.reduce((a, b) => (b.Tiri_Concessi_90 < a.Tiri_Concessi_90 ? b : a));
+    return names.find((n) => n.ruolo === minRow.Posizione_Analitica && n.affidabilita === 'alta') || null;
+  }
+  const sfavoritoHome = sfavoritoPick(homeNames, awayDefRows);
+  const sfavoritoAway = sfavoritoPick(awayNames, homeDefRows);
+
+  // --- Multigol ---
+  const goals = narrProjectGoals(calendar, homeId, awayId);
+
+  // --- Sequenze per venue ---
+  const seqHome = narrStreaksFor(calendar, homeId, 'HOME');
+  const seqAway = narrStreaksFor(calendar, awayId, 'AWAY');
+
+  const result = {
+    homeId, awayId, homeName, awayName,
+    standings: { home: sHome, away: sAway },
+    venue: {
+      homeAtHome, awayAtAway, homeAtAway, awayAtHome, homeCornerCart, awayCornerCart,
+      homeShotDuel, awayShotDuel, homeShotProfile, awayShotProfile, homeRecentForm, awayRecentForm,
+    },
+    chiaveLettura: {
+      homeWeak, awayWeak, homeWeakMetric, awayWeakMetric, homeWeakRatio, awayWeakRatio,
+      homeWeak2: homeWeakX.secondary ? homeWeakX.secondary.row : null,
+      awayWeak2: awayWeakX.secondary ? awayWeakX.secondary.row : null,
+      homeWeakSOT: homeWeakX.sotWeak, awayWeakSOT: awayWeakX.sotWeak,
+      awayExploiters, homeExploiters, shootEff,
+    },
+    nomi: {
+      homeLead, awayLead, cautelaHome, cautelaAway, sfavoritoHome, sfavoritoAway, homeNames, awayNames,
+      foulMatchupHome, foulMatchupAway, cardMatchupHome, cardMatchupAway,
+    },
+    multigol: goals,
+    sequenze: { home: seqHome, away: seqAway },
+    disciplina: { home: foulHome, away: foulAway },
+  };
+  result.preview = narrPreview(result);
+  result.chiaveHtml = narrChiaveHtml(result);
+  return result;
+}
+
+const NARR_ROLE_PLURAL = {
+  'Punta centrale': 'punte centrali', 'Trequartista': 'trequartisti', 'Esterno/Quinto': 'esterni',
+  'Centrocampista centrale': 'centrocampisti centrali', 'Terzino': 'terzini', 'Centrale difensivo': 'centrali difensivi',
+};
+// Forme con articolo (anche contratto con preposizione) per ogni ruolo — "punta centrale" è
+// femminile ("le punte centrali"), gli altri sono maschili; servono le tre forme perché "a"/"su"
+// si contraggono con l'articolo ("ai trequartisti", non "a i trequartisti").
+const NARR_ROLE_BARE_ART = {
+  'Punta centrale': 'le punte centrali', 'Trequartista': 'i trequartisti', 'Esterno/Quinto': 'gli esterni',
+  'Centrocampista centrale': 'i centrocampisti centrali', 'Terzino': 'i terzini', 'Centrale difensivo': 'i centrali difensivi',
+};
+const NARR_ROLE_A = {
+  'Punta centrale': 'alle punte centrali', 'Trequartista': 'ai trequartisti', 'Esterno/Quinto': 'agli esterni',
+  'Centrocampista centrale': 'ai centrocampisti centrali', 'Terzino': 'ai terzini', 'Centrale difensivo': 'ai centrali difensivi',
+};
+const NARR_ROLE_SU = {
+  'Punta centrale': 'sulle punte centrali', 'Trequartista': 'sui trequartisti', 'Esterno/Quinto': 'sugli esterni',
+  'Centrocampista centrale': 'sui centrocampisti centrali', 'Terzino': 'sui terzini', 'Centrale difensivo': 'sui centrali difensivi',
+};
+
+// Confronta, per UNA squadra, il rendimento nel venue di oggi con quello nell'ALTRO suo venue
+// (non con l'avversario) — è questo lo scarto che racconta se la squadra sta sopra o sotto la
+// sua stessa media abituale, il cuore della "vera analisi": non solo i numeri, ma cosa dicono
+// confrontati con l'altra faccia della stessa squadra.
+function narrVenueSplitClause(teamName, ownRec, otherRec, ownWord, otherWord) {
+  const ppg = (r) => (r && r.n ? (r.w * 3 + r.d) / r.n : null);
+  if (!ownRec || !otherRec || ownRec.n < 2 || otherRec.n < 2) return null;
+  const ownPPG = ppg(ownRec), otherPPG = ppg(otherRec);
+  if (ownPPG == null || otherPPG == null) return null;
+  const gap = ownPPG - otherPPG;
+  if (Math.abs(gap) < 0.6) return null;
+  const recTxt = (r) => `${r.w}V ${r.d}N ${r.l}P in ${r.n} gare (${r.gf}-${r.ga})`;
+  if (gap > 0) {
+    const totLosses = ownRec.l + otherRec.l;
+    const lossNote = (totLosses >= 3 && otherRec.l / totLosses >= 0.6)
+      ? ` ${otherRec.l} delle ${totLosses} sconfitte stagionali pesano proprio ${otherWord}, non ${ownWord}.`
+      : '';
+    return { dir: 'up', gap, text: `<b>${narrTeam(teamName, true)}</b> ${ownWord} ${recTxt(ownRec)} (${(ownPPG).toFixed(2).replace('.', ',')} punti a partita) — meglio di quanto renda persino ${otherWord} (${recTxt(otherRec)}).${lossNote}` };
+  }
+  return { dir: 'down', gap, text: `<b>${narrTeam(teamName, true)}</b> ${ownWord} non è la squadra che vediamo ${otherWord}: lì fa ${recTxt(otherRec)}, ma ${ownWord} scende a ${recTxt(ownRec)} (${(ownPPG).toFixed(2).replace('.', ',')} punti a partita) — un calo netto, non un dettaglio.` };
+}
+
+// "Vera analisi": quando la classifica generale racconta una storia (es. 17ª contro 4ª) ma lo
+// spacchettamento per venue ne racconta un'altra — ogni squadra confrontata con SE STESSA
+// nell'altro venue, non solo le due squadre tra loro — si scrive il paragrafo lungo in stile
+// analista, non la semplice frase di verdetto. Richiede un vero scarto di classifica (>=6
+// posizioni) E almeno una delle due squadre con un salto di rendimento reale tra i suoi venue:
+// altrimenti resta la versione sobria più sotto, per non forzare questo arco narrativo ovunque.
+function narrAnalisiVera(d) {
+  const posH = d.standings.home && d.standings.home.pos, posA = d.standings.away && d.standings.away.pos;
+  if (posH == null || posA == null || Math.abs(posH - posA) < 6) return null;
+  const homeClause = narrVenueSplitClause(d.homeName, d.venue.homeAtHome, d.venue.homeAtAway, 'in casa', 'in trasferta');
+  const awayClause = narrVenueSplitClause(d.awayName, d.venue.awayAtAway, d.venue.awayAtHome, 'in trasferta', 'in casa');
+  if (!homeClause && !awayClause) return null;
+  const hi = Math.max(posH, posA), lo = Math.min(posH, posA);
+  // Lessico variegato: lo stesso identico incipit su 190 partite su 380 sarebbe più stucchevole
+  // del problema che risolve. La scelta è deterministica (stessa gara → stesso testo se richiamata
+  // due volte) ma varia da partita a partita, pescando dal contenuto reale (posizioni, direzione
+  // dei due scarti), non da un indice casuale scollegato dal match.
+  const dir = (homeClause ? (homeClause.dir === 'up' ? 1 : -1) : 0) + (awayClause ? (awayClause.dir === 'up' ? 1 : -1) : 0);
+  const leads = [
+    `Il dato che ribalta la lettura prima ancora di entrare nei dettagli: presa per intero, è una sfida tra ${hi}ª e ${lo}ª della classe. Scomposta per venue, è tutt'altra storia.`,
+    `Sulla carta è ${hi}ª contro ${lo}ª, un verdetto che parrebbe già scritto. Scomposta per venue, la gara cambia faccia.`,
+    `Tra le due c'è lo scarto netto di una ${hi}ª contro una ${lo}ª in classifica generale — ma è un quadro che il dettaglio dei venue smentisce quasi subito.`,
+    `${hi}ª contro ${lo}ª: la classifica generale indicherebbe una gara senza storia. I numeri scomposti per venue raccontano una partita diversa.`,
+    `Il piazzamento (${hi}ª contro ${lo}ª) suggerisce un copione già scritto. Il rendimento reale nei rispettivi venue lo riscrive.`,
+  ];
+  const idx = Math.abs(hi * 7 + lo * 3 + dir * 11) % leads.length;
+  const parts = [leads[idx]];
+  if (awayClause) parts.push(awayClause.text);
+  if (homeClause) parts.push(homeClause.text);
+  return parts.join(' ');
+}
+
+// --- PREVIEW: verdetto sul reale favorito stasera (confronto diretto dei venue, non ciascuno
+// contro la propria media stagionale) + eventuale sorpresa classifica/rendimento. Niente debolezze
+// di ruolo qui — quelle sono materia della Chiave di lettura, per non ripetersi tra le due sezioni.
+function narrPreview(d) {
+  const out = [];
+  const ppgGen = (s) => (s && s.pg ? s.pts / s.pg : null);
+  const ppgVenue = (rec) => (rec && rec.n ? (rec.w * 3 + rec.d) / rec.n : null);
+  const hOwn = d.venue.homeAtHome, aOwn = d.venue.awayAtAway;
+  const ppgH = ppgVenue(hOwn), ppgA = ppgVenue(aOwn);
+
+  const analisiVera = narrAnalisiVera(d);
+  if (analisiVera) {
+    out.push(analisiVera);
+    if (ppgH != null && ppgA != null) {
+      const diff = ppgH - ppgA;
+      out.push(Math.abs(diff) <= 0.3
+        ? `Tradotto in termini da campo: più equilibrio di quanto suggerisca la sola classifica, senza un favorito netto imposto dal rendimento reale nei rispettivi venue.`
+        : `Tradotto in termini da campo: oggi non si affrontano una corazzata e una squadra allo sbando, ma il rendimento reale nei rispettivi venue — il favore del pronostico resta dalla parte ${narrTeamOf(diff > 0 ? d.homeName : d.awayName)} — su una cornice tattica più equilibrata di quanto il piazzamento in classifica suggerisca.`);
+    }
+  } else if (hOwn && aOwn && hOwn.n >= 2 && aOwn.n >= 2 && ppgH != null && ppgA != null) {
+    const diff = ppgH - ppgA;
+    const recTxt = (name, rec) => `${rec.w}V ${rec.d}N ${rec.l}P in ${rec.n} gare (${rec.gf}-${rec.ga})`;
+    if (Math.abs(diff) <= 0.3) {
+      out.push(`Nei rispettivi venue il rendimento reale è quasi identico — <b>${narrTeam(d.homeName)}</b> in casa ${recTxt(d.homeName, hOwn)}, <b>${narrTeam(d.awayName)}</b> in trasferta ${recTxt(d.awayName, aOwn)} — più equilibrio di quanto suggerisca il solo piazzamento in classifica.`);
+    } else if (diff >= 0.8) {
+      out.push(`Chi arriva meglio stasera non è deciso dalla classifica ma dal venue: <b>${narrTeam(d.homeName)}</b> vale <b>${ppgH.toFixed(2)}</b> punti a partita in casa (${recTxt(d.homeName, hOwn)}) contro i <b>${ppgA.toFixed(2)}</b> <b>${narrTeamOf(d.awayName)}</b> in trasferta (${recTxt(d.awayName, aOwn)}): sulla forma reale è ${narrTeam(d.homeName)} la favorita.`);
+    } else if (diff <= -0.8) {
+      out.push(`Chi arriva meglio stasera non è deciso dalla classifica ma dal venue: <b>${narrTeam(d.awayName)}</b> vale <b>${ppgA.toFixed(2)}</b> punti a partita in trasferta (${recTxt(d.awayName, aOwn)}) contro i <b>${ppgH.toFixed(2)}</b> <b>${narrTeamOf(d.homeName)}</b> in casa (${recTxt(d.homeName, hOwn)}): sulla forma reale è ${narrTeam(d.awayName)} la favorita, nonostante giochi fuori casa.`);
+    } else {
+      out.push(`Nei rispettivi venue <b>${narrTeam(d.homeName)}</b> fa <b>${ppgH.toFixed(2)}</b> punti a partita in casa (${recTxt(d.homeName, hOwn)}) e <b>${narrTeam(d.awayName)}</b> <b>${ppgA.toFixed(2)}</b> in trasferta (${recTxt(d.awayName, aOwn)}): un margine leggero, non una gara già scritta.`);
+    }
+  } else {
+    out.push(`Campione ancora minimo nel venue di oggi: servono più partite prima che il rendimento reale casa/trasferta diventi un indizio affidabile.`);
+  }
+
+  // Sorpresa classifica vs rendimento venue — solo se il gap è marcato, con frase completa (niente
+  // ellissi tipo "X vale N": si spiega SEMPRE punti-a-partita generale vs punti-a-partita nel venue.
+  // Saltata se è già scattata la "vera analisi" sopra: direbbe la stessa cosa due volte.
+  const cands = analisiVera ? [] : [
+    { team: d.homeName, gen: ppgGen(d.standings.home), ven: ppgH, side: 'in casa', pos: d.standings.home && d.standings.home.pos },
+    { team: d.awayName, gen: ppgGen(d.standings.away), ven: ppgA, side: 'in trasferta', pos: d.standings.away && d.standings.away.pos },
+  ].filter((x) => x.gen != null && x.ven != null).map((x) => ({ ...x, gap: x.ven - x.gen }));
+  if (cands.length) {
+    cands.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+    const g = cands[0];
+    if (Math.abs(g.gap) >= 0.6) {
+      out.push(g.gap > 0
+        ? `Da segnalare: <b>${narrTeam(g.team)}</b> è ${g.pos}ª in classifica generale con una media di <b>${g.gen.toFixed(2)}</b> punti a partita, ma ${g.side} rende molto di più — <b>${g.ven.toFixed(2)}</b> punti a partita — un dato migliore di quanto il piazzamento lasci intuire.`
+        : `Da segnalare: <b>${narrTeam(g.team)}</b> è ${g.pos}ª in classifica generale con una media di <b>${g.gen.toFixed(2)}</b> punti a partita, ma ${g.side} scende a <b>${g.ven.toFixed(2)}</b> — un rendimento inferiore a quanto il piazzamento lasci intuire.`);
+    }
+  }
+
+  // --- Dominanza fragile: vince le partite ma perde il duello sui tiri più spesso di quanto
+  // vinca — un vantaggio che sulla carta dei tiri non si vede, e che può non ripetersi stasera.
+  function dominanzaFragile(teamName, venRec, duel, side) {
+    if (!venRec || venRec.n < 3 || !duel || duel.n < 3 || duel.rate == null) return null;
+    const winRate = venRec.n ? venRec.w / venRec.n : null;
+    if (winRate == null) return null;
+    const gap = winRate - duel.rate;
+    if (gap < 0.3 || winRate < 0.45) return null; // serve un vero scarto, e che la squadra vinca davvero spesso
+    return `<b>Dominanza fragile</b>: ${narrTeam(teamName)} ${side} ha vinto <b>${Math.round(winRate * 100)}%</b> delle gare (${venRec.w}/${venRec.n}), ma ha tirato di più dell'avversario solo nel <b>${Math.round(duel.rate * 100)}%</b> dei casi (${duel.wins}/${duel.n}) — un rendimento che sul piano dei tiri è meno solido di quanto dica il risultato, e che un episodio può ribaltare.`;
+  }
+  const domHome = dominanzaFragile(d.homeName, hOwn, d.venue.homeShotDuel, 'in casa');
+  const domAway = dominanzaFragile(d.awayName, aOwn, d.venue.awayShotDuel, 'in trasferta');
+  if (domHome) out.push(domHome);
+  if (domAway) out.push(domAway);
+
+  // --- Mismatch volume/qualità dei tiri: chi tira più spesso contro chi è più preciso —
+  // due profili diversi (molto volume, poca precisione / poco volume, molto cinismo) dicono
+  // più cose di un confronto puro sulla media tiri.
+  const hp = d.venue.homeShotProfile, ap = d.venue.awayShotProfile;
+  if (hp && ap && hp.n >= 3 && ap.n >= 3 && hp.volume != null && ap.volume != null && hp.qualita != null && ap.qualita != null) {
+    const volDiff = hp.volume - ap.volume, qualDiff = hp.qualita - ap.qualita;
+    if (Math.abs(volDiff) >= 2.5 && (volDiff > 0) !== (qualDiff > 0) && Math.abs(qualDiff) >= 0.05) {
+      const volTeam = volDiff > 0 ? d.homeName : d.awayName, volSide = volDiff > 0 ? 'in casa' : 'in trasferta';
+      const qualTeam = qualDiff > 0 ? d.homeName : d.awayName, qualSide = qualDiff > 0 ? 'in casa' : 'in trasferta';
+      const volVal = volDiff > 0 ? hp.volume : ap.volume, qualVal = qualDiff > 0 ? hp.qualita : ap.qualita;
+      out.push(`<b>Mismatch volume/qualità dei tiri</b>: ${narrTeam(volTeam)} ${volSide} è la squadra che tira più spesso (<b>${volVal.toFixed(1).replace('.', ',')}</b> tiri a partita), ma è ${narrTeam(qualTeam)} ${qualSide} quella più precisa, con il <b>${Math.round(qualVal * 100)}%</b> dei tiri che arriva in porta — due modi opposti di proporsi in avanti, non lo stesso tipo di minaccia.`);
+    }
+  }
+
+  // --- Trend recente: ultime 5 gare, qualunque venue — la forma del momento può contraddire
+  // il quadro del solo venue di oggi (una squadra in crisi o in striscia positiva a prescindere da dove gioca).
+  function trendText(teamName, form) {
+    if (!form || form.n < 4) return null;
+    return `${narrTeam(teamName)} nelle ultime <b>${form.n}</b> gare (qualunque venue) fa <b>${form.w}V ${form.d}N ${form.l}P</b> (${form.gf}-${form.ga}, <b>${form.ppg.toFixed(2).replace('.', ',')}</b> punti a partita)`;
+  }
+  const trH = trendText(d.homeName, d.venue.homeRecentForm), trA = trendText(d.awayName, d.venue.awayRecentForm);
+  if (trH || trA) {
+    const parts = [trH, trA].filter(Boolean);
+    out.push(`<b>Trend recente</b>: ${parts.join('; ')}.`);
+  }
+
+  return out;
+}
+
+// --- CHIAVE DI LETTURA: non sempre "debolezza" — solo se il ruolo individuato concede/subisce
+// davvero più della media di lega (ratio >= 1.15); altrimenti si dice esplicitamente che non c'è
+// una vera falla. La metrica può essere Tiri concessi O Falli subiti dal ruolo avversario (quella
+// con lo scarto più marcato), non è più forzata sempre sui tiri.
+const NARR_WEAK_FIELD = { Tiri: 'Tiri_Concessi_90', Falli: 'FalliSubiti_Ruolo_90' };
+function narrWeakSentence(teamName, venueWord, weak, ratio, metric) {
+  if (!weak) return `<b>${narrTeam(teamName, true)}</b> ${venueWord} non ha un campione sufficiente, in nessun ruolo, per isolare un punto debole affidabile.`;
+  const field = NARR_WEAK_FIELD[metric] || 'Tiri_Concessi_90';
+  const val = weak[field];
+  const unit = metric === 'Falli' ? 'falli a partita' : 'tiri a partita';
+  const roleA = NARR_ROLE_A[weak.Posizione_Analitica];
+  const roleSu = NARR_ROLE_SU[weak.Posizione_Analitica];
+  const roleBare = NARR_ROLE_BARE_ART[weak.Posizione_Analitica];
+  if (ratio == null) {
+    const verbo = metric === 'Falli' ? 'commette più falli contro' : 'concede più tiri';
+    return `<b>${narrTeam(teamName, true)}</b> ${venueWord} ${verbo} a partita ${roleA} (<span class="narr-hl">${val.toFixed(1).replace('.', ',')}</span>) che a chiunque altro — non basta ancora il campione di lega per dire se è una vera falla o solo il meno solido dei suoi reparti.`;
+  }
+  if (ratio >= 1.3) {
+    const extreme = ratio >= 2.0 ? ' — scarto così ampio da trattare con cautela: a questo punto della stagione la media di lega su quel ruolo/venue si basa ancora su poche squadre con campione sufficiente.' : '';
+    const desc = metric === 'Falli'
+      ? `ha una falla vera sulla disciplina ${roleSu}: commette <span class="narr-hl-bad">${val.toFixed(1).replace('.', ',')} falli a partita</span> su quel ruolo avversario`
+      : `ha una falla vera ${roleSu}: concede <span class="narr-hl-bad">${val.toFixed(1).replace('.', ',')} tiri a partita</span>`;
+    return `<b>${narrTeam(teamName, true)}</b> ${venueWord} ${desc}, il <b>${Math.round((ratio - 1) * 100)}%</b> in più della media di lega per quel ruolo in questo venue.${extreme}`;
+  }
+  if (ratio >= 1.15) {
+    const desc = metric === 'Falli'
+      ? `commette sopra media falli ${roleA} (<span class="narr-hl">${val.toFixed(1).replace('.', ',')}</span> falli a partita, circa il <b>${Math.round((ratio - 1) * 100)}%</b> sopra la media di lega)`
+      : `concede sopra media ${roleA} (<span class="narr-hl">${val.toFixed(1).replace('.', ',')}</span> tiri a partita, circa il <b>${Math.round((ratio - 1) * 100)}%</b> sopra la media di lega)`;
+    return `<b>${narrTeam(teamName, true)}</b> ${venueWord} ${desc} — un punto da sfruttare, non ancora una voragine.`;
+  }
+  return `<b>${narrTeam(teamName, true)}</b> ${venueWord} non ha in realtà una vera debolezza di reparto: anche il suo dato più esposto (${roleBare}, <span class="narr-hl">${val.toFixed(1).replace('.', ',')}</span> ${unit}) resta in linea con la media di lega per quel ruolo in questo venue.`;
+}
+function narrChiaveHtml(d) {
+  const c = d.chiaveLettura;
+  const hw = c.homeWeak, aw = c.awayWeak;
+  if (!hw && !aw) return '<p>Campione ancora troppo piccolo per isolare una debolezza di ruolo affidabile su una delle due difese in questo venue.</p>';
+  const sentences = [
+    narrWeakSentence(d.homeName, 'in casa', hw, c.homeWeakRatio, c.homeWeakMetric),
+    narrWeakSentence(d.awayName, 'in trasferta', aw, c.awayWeakRatio, c.awayWeakMetric),
+  ];
+  const homeGenuine = hw && c.homeWeakRatio != null && c.homeWeakRatio >= 1.15;
+  const awayGenuine = aw && c.awayWeakRatio != null && c.awayWeakRatio >= 1.15;
+  if (homeGenuine && c.homeWeak2) {
+    const field = NARR_WEAK_FIELD[c.homeWeakMetric] || 'Tiri_Concessi_90';
+    const unit = c.homeWeakMetric === 'Falli' ? 'falli a partita' : 'tiri a partita';
+    sentences.push(`Per ${narrTeam(d.homeName)} non è un buco isolato: il dato resta alto (<span class="narr-hl">${c.homeWeak2[field].toFixed(1).replace('.', ',')}</span> ${unit}) anche ${NARR_ROLE_A[c.homeWeak2.Posizione_Analitica]}.`);
+  }
+  if (awayGenuine && c.awayWeak2) {
+    const field = NARR_WEAK_FIELD[c.awayWeakMetric] || 'Tiri_Concessi_90';
+    const unit = c.awayWeakMetric === 'Falli' ? 'falli a partita' : 'tiri a partita';
+    sentences.push(`Anche per ${narrTeam(d.awayName)} non è un buco isolato: il dato resta alto (<span class="narr-hl">${c.awayWeak2[field].toFixed(1).replace('.', ',')}</span> ${unit}) anche ${NARR_ROLE_A[c.awayWeak2.Posizione_Analitica]}.`);
+  }
+  if (homeGenuine && c.homeWeakSOT) sentences.push(`Sui tiri <b>in porta</b> concessi la falla ${narrTeamOf(d.homeName)} in casa è diversa: pesa soprattutto ${NARR_ROLE_SU[c.homeWeakSOT.Posizione_Analitica]} (<span class="narr-hl">${c.homeWeakSOT.SOT_Concessi_90.toFixed(1).replace('.', ',')} SOT a partita</span>).`);
+  if (awayGenuine && c.awayWeakSOT) sentences.push(`Sui tiri <b>in porta</b> concessi ${narrTeam(d.awayName)} in trasferta sconta soprattutto ${NARR_ROLE_BARE_ART[c.awayWeakSOT.Posizione_Analitica]} (<span class="narr-hl">${c.awayWeakSOT.SOT_Concessi_90.toFixed(1).replace('.', ',')} SOT a partita</span>).`);
+
+  // Exploiter con numero individuale (mu Tiri attesi in questa partita), non solo il nome: dice
+  // quanto quel giocatore specifico è messo per sfruttare la falla, non solo che gioca lì.
+  function exploiterText(teamName, list) {
+    const withMu = list.filter((p) => p.mu != null).slice(0, 2);
+    if (!withMu.length) return `${narrTeam(teamName, true)} ha in rosa ${list.slice(0, 2).map((p) => p.nome).join(' e ')}, proprio nel ruolo che sfrutta quel buco.`;
+    const names = withMu.map((p) => `<b>${p.nome}</b> (${fmtNum(p.mu)} tiri attesi)`).join(' e ');
+    return `${narrTeam(teamName, true)} risponde con ${names}, proprio nel ruolo che sfrutta quel buco.`;
+  }
+  function fmtNum(n) { return n.toFixed(1).replace('.', ','); }
+  const exploiters = [];
+  if (homeGenuine && c.awayExploiters.length) exploiters.push(exploiterText(d.awayName, c.awayExploiters));
+  if (awayGenuine && c.homeExploiters.length) exploiters.push(exploiterText(d.homeName, c.homeExploiters));
+
+  // Incrocio col nome più atteso: si dice qualcosa SOLO quando coincide davvero col ruolo debole
+  // genuino — citare un nome solo per dire che non è lui a sfruttare il buco non aggiunge nulla.
+  const crosses = [];
+  if (awayGenuine && d.nomi.homeLead && d.nomi.homeLead.ruolo === aw.Posizione_Analitica) {
+    crosses.push(`Non è un caso che il nome più atteso ${narrTeamOf(d.homeName)} sia <b>${d.nomi.homeLead.nome}</b>: gioca esattamente nel ruolo dove ${narrTeam(d.awayName)} concede più spazio in trasferta.`);
+  }
+  if (homeGenuine && d.nomi.awayLead && d.nomi.awayLead.ruolo === hw.Posizione_Analitica) {
+    crosses.push(`Stesso discorso per ${narrTeam(d.awayName)}: <b>${d.nomi.awayLead.nome}</b> gioca esattamente nel ruolo dove ${narrTeam(d.homeName)} concede più spazio in casa.`);
+  }
+
+  // Conferma indipendente: campione minimo 3 gare, e il verbo segue il dato reale invece di
+  // affermare sempre la stessa cosa a prescindere dal risultato (bug corretto).
+  let confText = '';
+  if (c.shootEff && c.shootEff.n >= 3) {
+    const rate = c.shootEff.clinical / c.shootEff.n;
+    confText = rate >= 0.5
+      ? `Conferma indipendente: ${narrTeam(d.awayName)} in trasferta ha messo in porta almeno metà dei tiri tentati in ${c.shootEff.clinical} gare su ${c.shootEff.n} — non spreca quando trova lo spazio.`
+      : `Da tenere d'occhio: ${narrTeam(d.awayName)} in trasferta ha messo in porta almeno metà dei tiri tentati solo in ${c.shootEff.clinical} gare su ${c.shootEff.n} — anche trovando spazio, fatica a essere clinico.`;
+  }
+
+  const lead = homeGenuine || awayGenuine
+    ? (homeGenuine && awayGenuine ? 'Due falle di reparto vere, non solo la peggiore tra le proprie.' : 'Una sola vera falla di reparto tra le due squadre — l\'altra difesa tiene meglio di quanto sembri.')
+    : 'Nessuna vera falla di reparto da nessuna delle due parti in questo venue: differenze minime, nella norma di lega.';
+
+  // Matchup individuali sui falli e sui cartellini (calcolati a parte, in d.nomi): qui diventano
+  // frasi con nomi e numeri, non solo l'elenco di ruoli deboli.
+  const matchupSentences = [];
+  for (const fm of [...(d.nomi.foulMatchupHome || []), ...(d.nomi.foulMatchupAway || [])]) {
+    matchupSentences.push(`<b>Match-up individuale sui falli</b>: <b>${fm.attacker.nome}</b> (${fm.role.toLowerCase()}) subisce in media <span class="narr-hl">${fm.fdMu.toFixed(1).replace('.', ',')} falli</span> a partita, e trova di fronte <b>${fm.defender.nome}</b> (${fm.defRole.toLowerCase()}), che ne commette <span class="narr-hl">${fm.fcMu.toFixed(1).replace('.', ',')}</span>.`);
+  }
+  for (const cm of [d.nomi.cardMatchupHome, d.nomi.cardMatchupAway]) {
+    if (!cm) continue;
+    matchupSentences.push(`<b>Match-up sui cartellini</b>: <b>${cm.attacker.nome}</b> (${cm.role.toLowerCase()}) subisce in media <span class="narr-hl">${cm.fdMu.toFixed(1).replace('.', ',')} falli</span> a partita e incontra <b>${cm.defender.nome}</b>, già ammonito in <span class="narr-hl-warn">${Math.round(cm.cardRate * 100)}%</span> delle sue gare — un contatto che può pesare su un cartellino già in bilico.`);
+  }
+
+  return `<p class="narr-lead">${lead}</p><p>${sentences.join(' ')}</p>${exploiters.length ? `<p>${exploiters.join(' ')}</p>` : ''}${crosses.length ? `<p>${crosses.join(' ')}</p>` : ''}${confText ? `<p>${confText}</p>` : ''}${matchupSentences.length ? `<p>${matchupSentences.join(' ')}</p>` : ''}`;
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = {
+    buildIndexes,
+    computePlayerStats,
+    computeTeamStats,
+    rankDesc,
+    computeRoleConcessions,
+    computeBaseline,
+    rankProvisional,
+    wilsonInterval,
+    computeArbitroStats,
+    computeAllArbitroStats,
+    computeTeamMatchTotals,
+    teamHitRate,
+    leagueAverageMetric,
+    computeTeamDuelTotals,
+    teamDuelRecord,
+    multiplicativeProjection,
+    restDaysBefore,
+    computeTeamStreak,
+    normalizeArbitroKey,
+    titleCaseArbitro,
+    isArbitroNomeValido,
+    teamCornerMatches,
+    computeCardDrought,
+    computeFoulCardProbabilityTable,
+    estimateCardProbability,
+    BASELINE_THRESHOLDS,
+    SHRINK_K,
+    // --- v2
+    MODEL_PARAMS, MODEL_METRICS, metricValue, buildLeagueModel, playerRows,
+    shrunkRate90, teamStrengthFactor, opponentFactor, expectedMinutes, reliabilityOf, projectPlayer,
+    pmfNB, probAtLeast, probAtLeastAlpha, minOddsFromProb, playerHitRateK, cardsPerFoulLeague,
+    probCardFromFouls, projectLineupTotal,
+    // --- narrativo
+    generateMatchNarrative,
+  };
+}
