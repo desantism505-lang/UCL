@@ -6,7 +6,7 @@
 <link rel="icon" href="favicon.ico" sizes="any" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#121A3D" />
+<meta name="theme-color" content="#20242C" />
 <title>Champions League 2026/27 — Matchup Engine</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -14,18 +14,18 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
-    --bg:#0A0E27;
-    --panel:#121A3D;
-    --panel-2:#0D1230;
-    --panel-header:#1B2550;
-    --zebra:#161F45;
-    --line:#2A3568;
+    --bg:#1A1D23;
+    --panel:#20242C;
+    --panel-2:#191D24;
+    --panel-header:#2A2F3A;
+    --zebra:#232832;
+    --line:#333946;
     --text:#FFFFFF;
-    --text-2:#D6DCF5;
-    --muted:#8A93C4;
-    --accent:#3DA5FF;
-    --accent-dim:#2E7BC4;
-    --accent-ink:#061225;
+    --text-2:#C7CCD6;
+    --muted:#8A8F9C;
+    --accent:#4A90D9;
+    --accent-dim:#3A6FA5;
+    --accent-ink:#07192B;
     --warn:#F2A65A;
     --warn-ink:#3D2408;
     --bad:#E8735B;
@@ -47,7 +47,7 @@
     font-family:'Space Grotesk',sans-serif;
     font-weight:700;
     letter-spacing:-0.01em;
-    color:var(--text);
+    color:var(--accent);
   }
   a{color:var(--accent);}
 
@@ -435,7 +435,7 @@
 
 
   /* ===================== v2: sezioni, formazioni, scheda ===================== */
-  :root{ --opp:#5BA8E8; --opp-dim:#2f5f8a; --ok:#3DA5FF; }
+  :root{ --opp:#5BA8E8; --opp-dim:#2f5f8a; --ok:#4A90D9; }
   .controls{padding:12px 32px;}
   .ctrl{flex:1 1 200px;}
   .matchcard{border:1px solid var(--line);background:var(--panel);border-radius:var(--radius);padding:16px 20px;margin-bottom:14px;}
@@ -582,7 +582,7 @@
   .m4 .big2{font-family:'Space Grotesk',Inter,sans-serif;font-size:34px;font-weight:700;color:#fff;line-height:1}
   .m4 .barsx{display:flex;align-items:flex-end;gap:7px;height:88px;position:relative;margin:18px 0 6px;border-bottom:1px solid var(--line)}
   .m4 .barsx i{flex:1;max-width:34px;border-radius:5px 5px 0 0;position:relative}
-  .m4 .barsx i.o{background:linear-gradient(180deg,#3DA5FF,#2E7BC4)}.m4 .barsx i.u{background:linear-gradient(180deg,#e8735b,#7a2f22)}
+  .m4 .barsx i.o{background:linear-gradient(180deg,#4A90D9,#3A6FA5)}.m4 .barsx i.u{background:linear-gradient(180deg,#e8735b,#7a2f22)}
   .m4 .barsx i em{position:absolute;top:-15px;left:0;right:0;text-align:center;font-style:normal;font-size:10px;color:var(--text-2);font-weight:600}
   .m4 .barsx .lk{position:absolute;left:0;right:0;border-top:1.5px dashed var(--warn)}
   .m4 .center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:radial-gradient(circle at 50% 40%,rgba(212,255,107,.10),transparent 70%);border-left:1px solid var(--line);border-right:1px solid var(--line);padding:10px 6px}
@@ -2763,7 +2763,7 @@ function prospettoBlock(match, P) {
     const mx = Math.max(avgOf(own) || 0, avgOf(con) || 0, 1);
     const bar = (v, c) => `<div style="height:4px;border-radius:3px;background:#2a3a30;margin-top:4px"><i style="display:block;height:4px;border-radius:3px;width:${v == null ? 0 : (v / mx) * 100}%;background:${c}"></i></div>`;
     const pr = P[sd][mk].total;
-    return `<td><b class="gm-n">${fmt(avgOf(own), 1)}</b>${bar(avgOf(own), '#3DA5FF')}<div class="sm">${esc(otherName())} ${fmt(avgOf(ownO), 1)} (${ownO.length}) · ${own.length} partite</div></td>
+    return `<td><b class="gm-n">${fmt(avgOf(own), 1)}</b>${bar(avgOf(own), '#4A90D9')}<div class="sm">${esc(otherName())} ${fmt(avgOf(ownO), 1)} (${ownO.length}) · ${own.length} partite</div></td>
       <td><b class="gm-n">${fmt(avgOf(con), 1)}</b>${bar(avgOf(con), '#5BA8E8')}<div class="sm">${esc(otherName())} ${fmt(avgOf(conO), 1)} (${conO.length}) · ${con.length} partite</div></td>
       <td class="num"><b style="color:var(--accent);font-size:17px">${pr == null ? '—' : fmt(pr, 1)}</b></td>`;
   };
@@ -2777,8 +2777,8 @@ function prospettoBlock(match, P) {
 
 function gmGauge(p) {
   const r = 46, c = 2 * Math.PI * r, d = c * p;
-  const col = p >= 0.55 ? '#3DA5FF' : p >= 0.4 ? '#F2A65A' : '#E8735B';
-  return `<svg width="116" height="116" viewBox="0 0 116 116"><circle cx="58" cy="58" r="${r}" fill="none" stroke="#2a3a30" stroke-width="10"/><circle cx="58" cy="58" r="${r}" fill="none" stroke="${col}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${d.toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 58 58)"/><text x="58" y="56" text-anchor="middle" fill="#fff" font-size="26" font-weight="700" font-family="Space Grotesk,Inter">${Math.round(p * 100)}%</text><text x="58" y="76" text-anchor="middle" fill="#8A93C4" font-size="10">modello Over</text></svg>`;
+  const col = p >= 0.55 ? '#4A90D9' : p >= 0.4 ? '#F2A65A' : '#E8735B';
+  return `<svg width="116" height="116" viewBox="0 0 116 116"><circle cx="58" cy="58" r="${r}" fill="none" stroke="#2a3a30" stroke-width="10"/><circle cx="58" cy="58" r="${r}" fill="none" stroke="${col}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${d.toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 58 58)"/><text x="58" y="56" text-anchor="middle" fill="#fff" font-size="26" font-weight="700" font-family="Space Grotesk,Inter">${Math.round(p * 100)}%</text><text x="58" y="76" text-anchor="middle" fill="#8A8F9C" font-size="10">modello Over</text></svg>`;
 }
 function gmBars(vs, line) {
   if (!vs.length) return '<div class="barsx" style="align-items:center;justify-content:center;color:var(--muted);font-size:12px;">nessuna partita</div>';
@@ -2826,7 +2826,7 @@ function giocateBlock(match, P) {
   const card = (T, O, sd, keyS) => {
     const proj = P[sd][mk].total, dl = defLine(proj), line = lineOf(keyS, dl);
     const own = scopeSet(T.id, T.v, tk, 'own'), ownO = otherSet(T.id, T.v, tk, 'own'), con = scopeSet(O.id, O.v, tk, 'opp'), conO = otherSet(O.id, O.v, tk, 'opp');
-    return gmCard(keyS, `${label} · ${esc(T.name)}`, 'GIOCATA SQUADRA', gmSide(`${esc(T.name)} produce`, S.scope === 'venue' ? 'nelle sue partite ' + (T.v === 'HOME' ? 'in casa' : 'in trasferta') : 'in tutte le sue partite', own, ownO, line, '#3DA5FF'),
+    return gmCard(keyS, `${label} · ${esc(T.name)}`, 'GIOCATA SQUADRA', gmSide(`${esc(T.name)} produce`, S.scope === 'venue' ? 'nelle sue partite ' + (T.v === 'HOME' ? 'in casa' : 'in trasferta') : 'in tutte le sue partite', own, ownO, line, '#4A90D9'),
       gmSide(`${esc(O.name)} concede`, S.scope === 'venue' ? 'nelle sue partite ' + (O.v === 'HOME' ? 'in casa' : 'in trasferta') : 'in tutte le sue partite', con, conO, line, '#5BA8E8'), dl, proj, MODEL_PARAMS.TEAM_ALPHA[tk] || 0, histOf(own, line));
   };
   const cH = card(H, A, 'home', `${mid}|home`), cA = card(A, H, 'away', `${mid}|away`);
@@ -2837,7 +2837,7 @@ function giocateBlock(match, P) {
   const aTot = tProj ? ((aH * pH * pH) + (aH * pA * pA)) / (tProj * tProj) : 0; // somma di due binomiali negative indipendenti
   const tH = scopeSet(H.id, H.v, tk, 'tot'), tA = scopeSet(A.id, A.v, tk, 'tot'), tHo = otherSet(H.id, H.v, tk, 'tot'), tAo = otherSet(A.id, A.v, tk, 'tot');
   const sub = (T) => (S.scope === 'venue' ? `somma delle due squadre · ${T.v === 'HOME' ? 'in casa' : 'in trasferta'}` : 'somma delle due squadre');
-  const cT = gmCard(`${mid}|tot`, `Totale partita · ${label}`, 'TOTALE', gmSide(`Partite di ${esc(H.name)}`, sub(H), tH, tHo, lineT, '#3DA5FF'), gmSide(`Partite di ${esc(A.name)}`, sub(A), tA, tAo, lineT, '#5BA8E8'), dlT, tProj, aTot, histOf(tH.concat(tA), lineT)).replace('class="m4"', 'class="m4 wide"');
+  const cT = gmCard(`${mid}|tot`, `Totale partita · ${label}`, 'TOTALE', gmSide(`Partite di ${esc(H.name)}`, sub(H), tH, tHo, lineT, '#4A90D9'), gmSide(`Partite di ${esc(A.name)}`, sub(A), tA, tAo, lineT, '#5BA8E8'), dlT, tProj, aTot, histOf(tH.concat(tA), lineT)).replace('class="m4"', 'class="m4 wide"');
   return `<div class="card"><h3>Giocate per mercato <span class="tag">inserisci linea e quota del book: chi produce, chi concede, cosa dice il modello</span>${scopeToggle()}</h3>
     <div class="cb" style="background:#0e1812"><div class="toolbar" style="margin-bottom:14px"><span>Mercato</span><span class="seg">${tabs}</span></div>
       ${S.bench ? '' : '<div class="infobox">Le probabilità usano sempre il totale con panchina (come le linee di mercato).</div>'}
