@@ -287,7 +287,11 @@ function computeRoleConcessions(matchLog, team, segmento, ruolo, teamPartite) {
 // normalizzata sui soli pesi delle componenti disponibili.
 // ---------------------------------------------------------------------------
 const BASELINE_WEIGHTS = { stag: 40, venue: 30, l10: 20, l5: 10 };
-const BASELINE_THRESHOLDS = { minMinutiStagione: 90, minNVenue: 2, minL5: 2, minL10: 3 };
+// minNVenue abbassato a 1 (solo in questa repo UCL, non su Serie A): con la
+// Champions League appena iniziata ogni squadra ha ancora 1 sola partita per
+// venue, e con soglia 2 lo Scanner restava sempre vuoto. Da rialzare a 2
+// (valore Serie A) quando il calendario avrà prodotto piu' partite per venue.
+const BASELINE_THRESHOLDS = { minMinutiStagione: 90, minNVenue: 1, minL5: 2, minL10: 3 };
 const SHRINK_K = 3; // a n=3 il peso della componente è dimezzato; a n=1 è un quarto; a n=10 è ~77%.
 
 // Shrinkage bayesiano: il peso "di diritto" di ogni componente (venue, L10, L5)
