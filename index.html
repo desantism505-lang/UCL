@@ -1369,8 +1369,8 @@ function uclMigrateKey(oldKey, newKey, filterFn){
 const UCL_ID_TAG = 'UCL2627_';
 const ARBITRO_OVERRIDES_KEY = 'ucl_arbitroOverrides_v1';
 uclMigrateKey('arbitroOverrides_v1', ARBITRO_OVERRIDES_KEY, o => Object.fromEntries(Object.entries(o || {}).filter(([k]) => k.startsWith('UCL2627'))));
-const SB_URL = 'https://bcvpqrxcdzzcnomlwtum.supabase.co';
-const SB_KEY = 'sb_publishable__rJ8XozGID78cfl0t4Fdmw_BoNP9A7k';
+const SB_URL = 'https://ikbsugibowvutewgjmvl.supabase.co';
+const SB_KEY = 'sb_publishable_C5TFWTzvAvIkKsGsvv3i7g_lip5hmUq';
 const sb = (typeof window.supabase !== 'undefined') ? window.supabase.createClient(SB_URL, SB_KEY) : null;
 
 let _arbitroOverridesCache = null;
@@ -1387,8 +1387,8 @@ function saveArbitroOverride(matchId, nome){
   try { localStorage.setItem(ARBITRO_OVERRIDES_KEY, JSON.stringify(overrides)); } catch(e){}
   if (sb) {
     const p = (nome && nome.trim())
-      ? sb.from('ucl_arbitro_overrides').upsert({ match_id: matchId, arbitro: nome.trim() })
-      : sb.from('ucl_arbitro_overrides').delete().eq('match_id', matchId);
+      ? sb.from('arbitro_overrides').upsert({ match_id: matchId, arbitro: nome.trim() })
+      : sb.from('arbitro_overrides').delete().eq('match_id', matchId);
     p.then(({ error }) => { if (error) console.warn('Supabase: salvataggio arbitro non riuscito, resta solo su questo dispositivo.', error); });
   }
 }
@@ -1398,7 +1398,7 @@ function saveArbitroOverride(matchId, nome){
 async function syncArbitroOverridesFromCloud(){
   if (!sb) return;
   try {
-    const { data, error } = await sb.from('ucl_arbitro_overrides').select('match_id, arbitro');
+    const { data, error } = await sb.from('arbitro_overrides').select('match_id, arbitro');
     if (error) throw error;
     const fresh = {};
     for (const row of data) fresh[row.match_id] = row.arbitro;
@@ -1774,7 +1774,7 @@ async function luPullCloud(match) {
   if (!sb) return;
   const id = match.Match_ID;
   try {
-    const { data, error } = await sb.from('ucl_formazioni').select('team_id, starters, confirmed, updated_at').eq('match_id', id);
+    const { data, error } = await sb.from('formazioni').select('team_id, starters, confirmed, updated_at').eq('match_id', id);
     if (error) throw error;
     if (!LU || LU.matchId !== id) return; // nel frattempo hai cambiato partita
     let changed = false;
@@ -1802,7 +1802,7 @@ function luPush(teamId, matchId) {
   if (!sb) return;
   const t = LU.teams[teamId];
   LU.cloud = 'saving'; luStatusUpdate();
-  sb.from('ucl_formazioni').upsert({ match_id: matchId, team_id: teamId, starters: t.ids, confirmed: t.confirmed, updated_at: new Date(t.ts || Date.now()).toISOString() })
+  sb.from('formazioni').upsert({ match_id: matchId, team_id: teamId, starters: t.ids, confirmed: t.confirmed, updated_at: new Date(t.ts || Date.now()).toISOString() })
     .then(({ error }) => {
       if (!LU || LU.matchId !== matchId) return;
       LU.cloud = error ? 'err' : 'saved';

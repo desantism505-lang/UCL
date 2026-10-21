@@ -1128,7 +1128,7 @@ async function fetchLineupMap(matchIds){
   for (const id of matchIds) map[id] = luReadLocal(id);
   if (sb && matchIds.length) {
     try {
-      const { data, error } = await sb.from('ucl_formazioni').select('match_id, team_id, starters, confirmed, updated_at').in('match_id', matchIds);
+      const { data, error } = await sb.from('formazioni').select('match_id, team_id, starters, confirmed, updated_at').in('match_id', matchIds);
       if (error) throw error;
       for (const row of data || []) {
         if (!map[row.match_id] || !Array.isArray(row.starters) || !row.starters.length) continue;
@@ -1521,7 +1521,7 @@ function toggleFavorite(i){
     const removedId = screenerRows[existingIdx].id;
     screenerRows.splice(existingIdx, 1);
     if (sb) {
-      sb.from('ucl_preferiti').delete().eq('id', String(removedId))
+      sb.from('preferiti').delete().eq('id', String(removedId))
         .then(({ error }) => { if (error) console.warn('Supabase: rimozione preferito non riuscita.', error); });
     }
   } else {
@@ -1541,7 +1541,7 @@ function toggleFavorite(i){
     };
     screenerRows.push(nuovo);
     if (sb) {
-      sb.from('ucl_preferiti').insert(scrRowToCloud(nuovo))
+      sb.from('preferiti').insert(scrRowToCloud(nuovo))
         .then(({ error }) => { if (error) { syncState.pref = false; refreshSyncBadge(); console.warn('Supabase: salvataggio preferito non riuscito, resta solo su questo dispositivo.', error); } });
     }
   }
@@ -1583,8 +1583,8 @@ document.getElementById('scnExport').addEventListener('click', () => {
 
 const SCR_STORAGE_KEY = 'ucl_screener_rows_v1';
 uclMigrateKey('sa_screener_rows_v1', SCR_STORAGE_KEY, rows => (rows || []).filter(r => String(r.favKey).includes(UCL_ID_TAG)));
-const SB_URL = 'https://bcvpqrxcdzzcnomlwtum.supabase.co';
-const SB_KEY = 'sb_publishable__rJ8XozGID78cfl0t4Fdmw_BoNP9A7k';
+const SB_URL = 'https://ikbsugibowvutewgjmvl.supabase.co';
+const SB_KEY = 'sb_publishable_C5TFWTzvAvIkKsGsvv3i7g_lip5hmUq';
 const sb = (typeof window.supabase !== 'undefined') ? window.supabase.createClient(SB_URL, SB_KEY) : null;
 
 function loadScreenerRows(){
@@ -1623,11 +1623,11 @@ function scrRowFromCloud(row){
 async function syncScreenerFromCloud(){
   if (!sb) return;
   try {
-    const { data, error } = await sb.from('ucl_preferiti').select('*').order('created_at', { ascending: true });
+    const { data, error } = await sb.from('preferiti').select('*').order('created_at', { ascending: true });
     if (error) throw error;
     if (data.length === 0 && screenerRows.length > 0) {
       // Cloud vuoto ma preferiti locali presenti: li carico su, NON li cancello.
-      const { error: e2 } = await sb.from('ucl_preferiti').insert(screenerRows.map(scrRowToCloud));
+      const { error: e2 } = await sb.from('preferiti').insert(screenerRows.map(scrRowToCloud));
       if (e2) throw e2;
     } else {
       screenerRows = data.map(scrRowFromCloud);
@@ -1667,8 +1667,8 @@ function refreshSyncBadge(){
 function quoteCloudSave(key, quota){
   if (!sb) { syncState.quote = false; refreshSyncBadge(); return; }
   const q = (quota == null)
-    ? sb.from('ucl_scanner_quote').delete().eq('chiave', key)
-    : sb.from('ucl_scanner_quote').upsert({ chiave: key, quota: quota, updated_at: new Date().toISOString() });
+    ? sb.from('scanner_quote').delete().eq('chiave', key)
+    : sb.from('scanner_quote').upsert({ chiave: key, quota: quota, updated_at: new Date().toISOString() });
   q.then(({ error }) => {
     syncState.quote = !error;
     if (error) console.warn('Supabase: salvataggio quota non riuscito, resta solo su questo dispositivo.', error);
@@ -1678,13 +1678,13 @@ function quoteCloudSave(key, quota){
 async function syncQuotesFromCloud(){
   if (!sb) { syncState.quote = false; refreshSyncBadge(); return; }
   try {
-    const { data, error } = await sb.from('ucl_scanner_quote').select('chiave,quota');
+    const { data, error } = await sb.from('scanner_quote').select('chiave,quota');
     if (error) throw error;
     const cloud = {};
     data.forEach(r => { cloud[r.chiave] = Number(r.quota); });
     const localOnly = Object.entries(scanQuotes).filter(([k, v]) => v != null && !(k in cloud));
     if (localOnly.length) {
-      const { error: e2 } = await sb.from('ucl_scanner_quote').upsert(localOnly.map(([k, v]) => ({ chiave: k, quota: v })));
+      const { error: e2 } = await sb.from('scanner_quote').upsert(localOnly.map(([k, v]) => ({ chiave: k, quota: v })));
       if (e2) throw e2;
     }
     Object.assign(scanQuotes, cloud);
@@ -1708,7 +1708,7 @@ document.getElementById('scrClear').addEventListener('click', () => {
   saveScreenerRows();
   renderScreener();
   if (sb) {
-    sb.from('ucl_preferiti').delete().not('id', 'is', null)
+    sb.from('preferiti').delete().not('id', 'is', null)
       .then(({ error }) => { if (error) console.warn('Supabase: svuotamento remoto non riuscito.', error); });
   }
 });
@@ -1719,7 +1719,7 @@ function scrSetEsito(id, esito){
   saveScreenerRows();
   renderScreener();
   if (sb && r) {
-    sb.from('ucl_preferiti').update({ esito: r.esito }).eq('id', String(id))
+    sb.from('preferiti').update({ esito: r.esito }).eq('id', String(id))
       .then(({ error }) => { if (error) { syncState.pref = false; refreshSyncBadge(); console.warn('Supabase: aggiornamento esito non riuscito.', error); } });
   }
 }
@@ -1735,7 +1735,7 @@ function favKeyToScanKey(favKey){
 }
 function favCloudQuota(r){
   if (!sb) return;
-  sb.from('ucl_preferiti').update({ quota: r.quota }).eq('id', String(r.id))
+  sb.from('preferiti').update({ quota: r.quota }).eq('id', String(r.id))
     .then(({ error }) => {
       if (error) { syncState.pref = false; refreshSyncBadge(); console.warn('Supabase: aggiornamento quota preferito non riuscito.', error); }
     });
@@ -1780,7 +1780,7 @@ function removeScrRow(id){
   saveScreenerRows();
   renderScreener();
   if (sb) {
-    sb.from('ucl_preferiti').delete().eq('id', String(id))
+    sb.from('preferiti').delete().eq('id', String(id))
       .then(({ error }) => { if (error) console.warn('Supabase: rimozione preferito non riuscita.', error); });
   }
 }
