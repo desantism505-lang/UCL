@@ -1220,6 +1220,7 @@ function scnSetQuota(i, val){
   scanQuotes[key] = (val === '' || Number.isNaN(q) || q <= 1) ? null : q;
   saveScanQuotes();
   quoteCloudSave(key, scanQuotes[key]);
+  syncQuotaToFavorite(r, scanQuotes[key]); // il preferito di questa giocata segue la quota dello Scanner
 
   const eFiltrataDopo = applyScnFilters([r]).length > 0;
   if (eraFiltrataPrima !== eFiltrataDopo) {
@@ -1686,7 +1687,7 @@ async function syncQuotesFromCloud(){
 
 let screenerRows = loadScreenerRows();
 refreshSyncBadge();
-if (sb) { syncScreenerFromCloud(); syncQuotesFromCloud(); } else { syncState.quote = false; syncState.pref = false; refreshSyncBadge(); }
+if (sb) { Promise.allSettled([syncScreenerFromCloud(), syncQuotesFromCloud()]).then(reconcileFavQuotes); } else { syncState.quote = false; syncState.pref = false; refreshSyncBadge(); setTimeout(reconcileFavQuotes, 0); }
 
 document.getElementById('scrClear').addEventListener('click', () => {
   if (!confirm('Svuotare tutti i preferiti, compreso lo storico esiti già segnati?')) return;
@@ -1706,8 +1707,43 @@ function scrSetEsito(id, esito){
   renderScreener();
   if (sb && r) {
     sb.from('preferiti').update({ esito: r.esito }).eq('id', String(id))
-      .then(({ error }) => { if (error) console.warn('Supabase: aggiornamento esito non riuscito.', error); });
+      .then(({ error }) => { if (error) { syncState.pref = false; refreshSyncBadge(); console.warn('Supabase: aggiornamento esito non riuscito.', error); } });
   }
+}
+// --- Quota unica tra Scanner e Preferiti -----------------------------------
+// Prima il preferito riceveva una COPIA della quota al momento della stella: una
+// quota scritta nello Scanner dopo la stella non arrivava mai ai Preferiti (e
+// viceversa). Ora le due restano allineate, e all'apertura le quote dello Scanner
+// riempiono i preferiti rimasti senza quota. Mai sovrascrive una quota con "vuoto".
+// favKey = Player|mercato|linea|Match  ->  chiave Scanner = Player|Match|mercato|linea
+function favKeyToScanKey(favKey){
+  const p = String(favKey || '').split('|');
+  return p.length === 4 ? `${p[0]}|${p[3]}|${p[1]}|${p[2]}` : null;
+}
+function favCloudQuota(r){
+  if (!sb) return;
+  sb.from('preferiti').update({ quota: r.quota }).eq('id', String(r.id))
+    .then(({ error }) => {
+      if (error) { syncState.pref = false; refreshSyncBadge(); console.warn('Supabase: aggiornamento quota preferito non riuscito.', error); }
+    });
+}
+function syncQuotaToFavorite(r, quota){
+  const fav = screenerRows.find(x => x.favKey === favKeyOf(r));
+  if (!fav || (fav.quota ?? null) === (quota ?? null)) return;
+  fav.quota = quota ?? null;
+  saveScreenerRows();
+  favCloudQuota(fav);
+  renderScreener();
+}
+function reconcileFavQuotes(){
+  let changed = false;
+  for (const fav of screenerRows) {
+    if (fav.quota != null) continue;
+    const sk = favKeyToScanKey(fav.favKey);
+    const q = sk ? scanQuotes[sk] : null;
+    if (q != null) { fav.quota = q; favCloudQuota(fav); changed = true; }
+  }
+  if (changed) { saveScreenerRows(); renderScreener(); }
 }
 function scrSetQuota(id, val){
   const r = screenerRows.find(r => String(r.id) === String(id));
@@ -1716,9 +1752,14 @@ function scrSetQuota(id, val){
   r.quota = (val === '' || Number.isNaN(q) || q <= 1) ? null : q;
   saveScreenerRows();
   renderScreener();
-  if (sb) {
-    sb.from('preferiti').update({ quota: r.quota }).eq('id', String(id))
-      .then(({ error }) => { if (error) console.warn('Supabase: aggiornamento quota non riuscito.', error); });
+  favCloudQuota(r);
+  // La quota e' una sola: aggiorno anche quella dello Scanner per la stessa giocata.
+  const sk = favKeyToScanKey(r.favKey);
+  if (sk) {
+    scanQuotes[sk] = r.quota;
+    saveScanQuotes();
+    quoteCloudSave(sk, r.quota);
+    if (scanResults.length) renderScan();
   }
 }
 function removeScrRow(id){
