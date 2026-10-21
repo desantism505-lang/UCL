@@ -542,7 +542,19 @@ const SORT_ACCESSORS = {
 
 // Overrides arbitro inseriti a mano dal Matchup Engine — stesso localStorage,
 // così compaiono anche in questa tabella riepilogativa (stesso dispositivo).
-const ARBITRO_OVERRIDES_KEY = 'arbitroOverrides_v1';
+// Migrazione una tantum dalle vecchie chiavi del browser condivise con Serie A (stessa origine):
+// copia solo i dati UCL nella nuova chiave "ucl_*"; le vecchie non si toccano (le usa Serie A).
+function uclMigrateKey(oldKey, newKey, filterFn){
+  try {
+    if (localStorage.getItem(newKey) !== null) return;
+    const raw = localStorage.getItem(oldKey);
+    if (raw === null) return;
+    localStorage.setItem(newKey, JSON.stringify(filterFn(JSON.parse(raw))));
+  } catch (e) { /* storage non disponibile */ }
+}
+const UCL_ID_TAG = 'UCL2627_';
+const ARBITRO_OVERRIDES_KEY = 'ucl_arbitroOverrides_v1';
+uclMigrateKey('arbitroOverrides_v1', ARBITRO_OVERRIDES_KEY, o => Object.fromEntries(Object.entries(o || {}).filter(([k]) => k.startsWith('UCL2627'))));
 function loadArbitroOverrides(){
   try { return JSON.parse(localStorage.getItem(ARBITRO_OVERRIDES_KEY) || '{}'); }
   catch(e){ return {}; }
