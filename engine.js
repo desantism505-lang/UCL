@@ -1654,7 +1654,11 @@ function generateMatchNarrative(matchLog, calendar, rosters, match) {
   function withMuTiri(list, teamId, oppId, pv) {
     return list.map((p) => {
       const pr = projectPlayer(modelEarly, matchLog, { id: p.id, team: teamId, ruolo: p.ruolo }, oppId, true, 'Tiri', pv);
-      return { ...p, mu: pr.mu };
+      const venueRows = matchLog.filter(x => x.Player_ID === p.id && x.Team_ID === teamId && x.Venue === pv);
+      const venueMinutes = venueRows.reduce((total,x)=>total+(Number(x.Minuti)||0),0);
+      const venueShots = venueRows.reduce((total,x)=>total+(Number(x.Tiri)||0),0);
+      return { ...p, mu: pr.mu, venueMinutes, venueShots,
+        venueGames: venueRows.length, venueTiri90: venueMinutes >= 90 ? 90*venueShots/venueMinutes : null };
     }).sort((a, b) => (b.mu || 0) - (a.mu || 0));
   }
   const awayExploiters = homeWeak ? withMuTiri(narrPlayersInRole(rosters, matchLog, awayId, homeWeak.Posizione_Analitica, 300), awayId, homeId, 'A') : [];
@@ -1782,7 +1786,8 @@ function generateMatchNarrative(matchLog, calendar, rosters, match) {
     sequenze: { home: seqHome, away: seqAway },
     disciplina: { home: foulHome, away: foulAway },
   };
-  result.preview = narrPreview(result);
+  result.temi = narrDiscoverThemes(result);
+  result.preview = narrDynamicPreview(result, result.temi);
   result.chiaveHtml = narrChiaveHtml(result);
   return result;
 }
@@ -1795,15 +1800,15 @@ const NARR_ROLE_PLURAL = {
 // femminile ("le punte centrali"), gli altri sono maschili; servono le tre forme perché "a"/"su"
 // si contraggono con l'articolo ("ai trequartisti", non "a i trequartisti").
 const NARR_ROLE_BARE_ART = {
-  'Punta centrale': 'le punte centrali', 'Trequartista': 'i trequartisti', 'Esterno/Quinto': 'gli esterni',
+  'Punta centrale': 'le punte centrali', 'Trequartista': 'i trequartisti', 'Esterno/Quinto': 'gli Esterni/Quinti',
   'Centrocampista centrale': 'i centrocampisti centrali', 'Terzino': 'i terzini', 'Centrale difensivo': 'i centrali difensivi',
 };
 const NARR_ROLE_A = {
-  'Punta centrale': 'alle punte centrali', 'Trequartista': 'ai trequartisti', 'Esterno/Quinto': 'agli esterni',
+  'Punta centrale': 'alle punte centrali', 'Trequartista': 'ai trequartisti', 'Esterno/Quinto': 'agli Esterni/Quinti',
   'Centrocampista centrale': 'ai centrocampisti centrali', 'Terzino': 'ai terzini', 'Centrale difensivo': 'ai centrali difensivi',
 };
 const NARR_ROLE_SU = {
-  'Punta centrale': 'sulle punte centrali', 'Trequartista': 'sui trequartisti', 'Esterno/Quinto': 'sugli esterni',
+  'Punta centrale': 'sulle punte centrali', 'Trequartista': 'sui trequartisti', 'Esterno/Quinto': 'sugli Esterni/Quinti',
   'Centrocampista centrale': 'sui centrocampisti centrali', 'Terzino': 'sui terzini', 'Centrale difensivo': 'sui centrali difensivi',
 };
 
@@ -1864,6 +1869,125 @@ function narrAnalisiVera(d) {
 // --- PREVIEW: verdetto sul reale favorito stasera (confronto diretto dei venue, non ciascuno
 // contro la propria media stagionale) + eventuale sorpresa classifica/rendimento. Niente debolezze
 // di ruolo qui — quelle sono materia della Chiave di lettura, per non ripetersi tra le due sezioni.
+
+/* Preview 2.0: scoperta temi, ordinamento per rilievo e campione.
+ * I punteggi sono priorità editoriali, NON probabilità di una scommessa. */
+function narrDiscoverThemes(d) {
+  const v=d.venue, c=d.chiaveLettura, found=[];
+  const f=x=>Number(x).toFixed(1).replace('.', ',');
+  const ppg=r=>r&&r.n?(r.w*3+r.d)/r.n:null;
+  const add=(id,domain,title,evidence,limit,signal,n)=>{
+    if(n<2 || !Number.isFinite(signal)) return;
+    const score=Math.round(55*Math.min(1,signal)+20+15*Math.min(1,n/6)+10);
+    found.push({id,domain,title,evidence,limit,n,score});
+  };
+  const h=v.homeShotProfile, a=v.awayShotProfile;
+  if(h&&a&&h.n>=3&&a.n>=3&&h.volume!=null&&a.volume!=null){
+    const dv=h.volume-a.volume;
+    if(Math.abs(dv)>=2.5){
+      const team=dv>0?d.homeName:d.awayName;
+      add('volume','tiri','Tiri: '+(dv>0?d.homeName:d.awayName)+' nettamente sopra',
+        narrTeam(team,true)+' produce '+f(Math.max(h.volume,a.volume))+' tiri a gara nel venue della sfida contro '+f(Math.min(h.volume,a.volume))+' dell’altra squadra: '+f(Math.abs(dv))+' conclusioni di scarto.',
+        'Si confrontano i volumi prodotti, non le concessioni difensive: non è una previsione dei tiri di questa gara.',
+        Math.abs(dv)/6,Math.min(h.n,a.n));
+    }
+    if(h.qualita!=null&&a.qualita!=null&&Math.abs(h.qualita-a.qualita)>=.07){
+      const team=h.qualita>a.qualita?d.homeName:d.awayName;
+      add('precisione','precisione','Tiri in porta: '+(h.qualita>a.qualita?d.homeName:d.awayName)+' più precisa',
+        narrTeam(team,true)+' manda in porta il '+Math.round(Math.max(h.qualita,a.qualita)*100)+'% dei propri tiri, contro il '+Math.round(Math.min(h.qualita,a.qualita)*100)+'% dell’avversaria nei rispettivi venue.',
+        'La percentuale di tiri nello specchio non è la qualità delle occasioni né la probabilità di segnare.',
+        Math.abs(h.qualita-a.qualita)/.18,Math.min(h.n,a.n));
+    }
+  }
+  const ph=ppg(v.homeAtHome),pa=ppg(v.awayAtAway);
+  if(ph!=null&&pa!=null&&v.homeAtHome.n>=2&&v.awayAtAway.n>=2&&Math.abs(ph-pa)>=.65){
+    const team=ph>pa?d.homeName:d.awayName;
+    add('venue','rendimento','Rendimento nel venue: '+team+' avanti',
+      narrTeam(team,true)+' ha ottenuto '+f(Math.max(ph,pa))+' punti per gara '+(ph>pa?'in casa':'in trasferta')+', contro '+f(Math.min(ph,pa))+' dell’altra squadra nel suo venue.',
+      'Il risultato storico è influenzato anche dal calendario degli avversari: non dimostra superiorità nel gioco.',
+      Math.abs(ph-pa)/1.5,Math.min(v.homeAtHome.n,v.awayAtAway.n));
+  }
+  const roles=[
+    {team:d.homeName,opp:d.awayName,weak:c.homeWeak,ratio:c.homeWeakRatio,metric:c.homeWeakMetric,ok:c.homeWeakOppHasRole,n:v.homeAtHome?v.homeAtHome.n:0,players:c.awayExploiters},
+    {team:d.awayName,opp:d.homeName,weak:c.awayWeak,ratio:c.awayWeakRatio,metric:c.awayWeakMetric,ok:c.awayWeakOppHasRole,n:v.awayAtAway?v.awayAtAway.n:0,players:c.homeExploiters}
+  ];
+  for(const z of roles){
+    if(!z.weak||z.ok!==true||z.ratio==null||z.ratio<1.15) continue;
+    const role=NARR_ROLE_A[z.weak.Posizione_Analitica]||('al ruolo '+z.weak.Posizione_Analitica);
+    const field=z.metric==='Falli'?'FalliSubiti_Ruolo_90':'Tiri_Concessi_90';
+    const value=z.weak[field];
+    const player=z.metric==='Tiri'&&z.players&&z.players.length
+      ? z.players.filter(p=>p.venueMinutes>=120&&p.venueShots>=1)
+          .sort((a,b)=>(b.venueTiri90||0)-(a.venueTiri90||0))[0]||null : null;
+    const playerNote=player
+      ? ' Nel venue di questa gara, '+player.nome+' ('+z.opp+') ha prodotto '+player.venueShots+' tiri in '+player.venueGames+' partite ('+player.venueMinutes+' minuti, '+f(player.venueTiri90)+' tiri/90).'
+      : '';
+    const title=z.metric==='Falli'
+      ? z.opp+': '+(z.weak.Posizione_Analitica||'ruolo')+' e falli contro '+z.team
+      : z.opp+': '+(z.weak.Posizione_Analitica||'ruolo')+' contro la difesa '+z.team;
+    add('role'+z.team,'matchup',title,
+      'Squadra che concede: '+z.team+' '+(z.team===d.homeName?'in casa':'in trasferta')+'. Squadra che può beneficiare: '+z.opp+'. '+narrTeam(z.team,true)+' registra '+f(value)+' '+(z.metric==='Falli'?'falli commessi contro ':'tiri concessi ')+role+' a partita nel proprio venue: +'+Math.round((z.ratio-1)*100)+'% sulla media di riferimento per lo stesso ruolo/venue.'+playerNote,
+      player ? 'L’incrocio merita verifica sui tiri di '+player.nome+' solo se confermato in quel ruolo e con minuti sufficienti; nessuna indicazione di valore senza quota.'
+        : 'Il segnale di reparto non è sostenuto da un interprete con volume di tiri sufficiente nel venue: non promuoverlo a opportunità individuale.',
+      Math.min(1,(z.ratio-1)/.65)*(player?Math.min(1.25,Math.max(.25,player.venueTiri90/1.4)):0.25),z.n);
+  }
+  const hc=v.homeCornerCart,ac=v.awayCornerCart;
+  if(hc&&ac&&hc.corner!=null&&ac.corner!=null&&v.homeAtHome&&v.awayAtAway&&v.homeAtHome.n>=2&&v.awayAtAway.n>=2){
+    const diff=hc.corner-ac.corner;
+    if(Math.abs(diff)>=2){
+      const team=diff>0?d.homeName:d.awayName;
+      add('corner','corner','Corner prodotti: '+team+' avanti',
+        narrTeam(team,true)+' conquista '+f(Math.max(hc.corner,ac.corner))+' corner per partita, contro '+f(Math.min(hc.corner,ac.corner))+' dell’avversaria nei rispettivi venue.',
+        'Sono corner prodotti, non concessi: il confronto da solo non stima i corner della gara.',
+        Math.abs(diff)/4,Math.min(v.homeAtHome.n,v.awayAtAway.n));
+    }
+  }
+  found.sort((x,y)=>y.score-x.score||x.id.localeCompare(y.id));
+  const selected=[],domains=new Set();
+  for(const t of found){
+    if(domains.has(t.domain))continue;
+    selected.push(t);domains.add(t.domain);
+    if(selected.length===3)break;
+  }
+  return selected;
+}
+function narrDynamicPreview(d,temi){
+  const home=narrTeam(d.homeName),away=narrTeam(d.awayName);
+  if(!temi.length)return [
+    'Il confronto tra '+home+' in casa e '+away+' in trasferta non restituisce un vantaggio statistico dominante con i dati attualmente disponibili. Non emerge un tema abbastanza solido per costruire una lettura univoca della gara.',
+    'Per il momento la valutazione resta aperta: saranno decisive le formazioni e le concessioni effettive per ruolo. Non utilizziamo dati delle partite nel venue opposto per riempire la Preview.'
+  ];
+  const first=temi[0],second=temi.find(x=>x.domain!==first.domain);
+  const paragraphs=[];
+  if(first.domain==='matchup'){
+    paragraphs.push('La chiave statistica di '+d.homeName+'–'+d.awayName+' è un incrocio tra ruolo offensivo e difesa avversaria. '+first.evidence+' Se chi occupa quel ruolo viene impiegato con continuità, quel reparto potrebbe trovare più occasioni per la propria statistica specifica, pur senza rendere automatico il rendimento dei singoli.');
+  } else if(first.domain==='tiri'){
+    paragraphs.push('Il primo squilibrio della sfida riguarda la frequenza delle conclusioni. '+first.evidence+' Questo suggerisce una diversa propensione a cercare il tiro, non necessariamente un maggiore numero di occasioni pulite: sarà la risposta difensiva dell’avversaria a determinare se il divario si ripeterà.');
+  } else if(first.domain==='precisione'){
+    paragraphs.push('La lettura della gara parte da come le due squadre trasformano i tentativi in tiri nello specchio. '+first.evidence+' La differenza è interessante perché il semplice totale dei tiri potrebbe raccontare una partita diversa rispetto alle conclusioni che impegnano il portiere.');
+  } else if(first.domain==='rendimento'){
+    paragraphs.push('Il confronto tra il rendimento casalingo di '+home+' e quello esterno di '+away+' propone una prima gerarchia. '+first.evidence+' I risultati, però, vanno letti insieme alla produzione offensiva e a ciò che ciascuna squadra concede: da soli non descrivono il controllo della gara.');
+  } else {
+    paragraphs.push('Un dato distingue questa partita dalle altre: '+first.evidence+' '+first.limit);
+  }
+  if(second){
+    const conjunction=second.domain==='matchup'
+      ? 'Sul piano dei singoli ruoli emerge anche una seconda possibile direzione della gara. '
+      : second.domain==='rendimento' ? 'Il quadro dei risultati nel venue aggiunge un elemento diverso. '
+      : second.domain==='tiri' ? 'Guardando invece al volume offensivo, emerge un secondo contrasto. '
+      : second.domain==='precisione' ? 'C’è però una distinzione importante tra volume di gioco e precisione delle conclusioni. '
+      : 'Un secondo segnale merita attenzione. ';
+    paragraphs.push(conjunction+second.evidence);
+  }
+  const n=Math.min(...temi.slice(0,second?2:1).map(t=>t.n));
+  let counter='Il punto che potrebbe smentire questa lettura è la scarsa profondità del campione ('+n+' gare per almeno uno degli indicatori).';
+  if(first.domain==='matchup') counter+=' Inoltre, senza la conferma del ruolo e dei minuti del giocatore segnalato, il mismatch resta soltanto potenziale.';
+  else if(first.domain==='tiri'||first.domain==='precisione') counter+=' Il dato sui tiri prodotti non incorpora automaticamente quelli concessi dall’avversaria.';
+  else counter+=' La forza degli avversari già incontrati può aver influenzato il rendimento.';
+  paragraphs.push(counter);
+  return paragraphs;
+}
+
 function narrPreview(d) {
   const out = [];
   const ppgGen = (s) => (s && s.pg ? s.pts / s.pg : null);
