@@ -1670,7 +1670,8 @@ function arbitroFactTextV2(e, nomeKey){
   // Formulazione esatta richiesta da Marco, 24/10: media del singolo arbitro
   // confrontata con la media di lega dello stesso pool di eleggibili, poi
   // il rank — niente più "— media X a partita," prima del rank.
-  return `${clausola} (media ${e.value.toFixed(2)} vs media di lega ${e.leagueAvg.toFixed(2)}), ${e.rank}° su ${e.eligible} arbitri idonei (${e.n} partite dirette)`;
+  const leagueTxt = e.leagueAvg != null ? ` vs media di lega ${e.leagueAvg.toFixed(2)}` : '';
+  return `${clausola} (media ${e.value.toFixed(2)}${leagueTxt}), ${e.rank}° su ${e.eligible} arbitri idonei (${e.n} partite dirette)`;
 }
 function arbitroFactsForSide(match, side, venueLabel){
   const arbitriEff = arbitriEffettivi();
