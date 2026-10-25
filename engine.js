@@ -1677,15 +1677,18 @@ function crossExtremesOneSide(matchLog, rosters, teamsAll, attId, attVenueLetter
       const concTied = concRows.filter((x) => x.value === concRows[concIdx].value).length;
       if (prodTied > FATTI_MAX_TIE || concTied > FATTI_MAX_TIE) continue;
       const difSegmento = difVenueLetter === 'H' ? 'HOME' : 'AWAY';
+      // Lato campo: sempre null in UCL (dataset senza Lato_Campo), ma teniamo la stessa
+      // logica (con fallback su 'Tiri' quando la colonna specifica della metrica non basta,
+      // richiesta Marco 25/10) della repo Serie A per coerenza di struttura dati tra i due motori.
+      let lato = roleConcessionsSideBreakdown(matchLog, difId, difSegmento, ruolo, m.key);
+      if (!lato && m.key !== 'Falli_commessi') lato = roleConcessionsSideBreakdown(matchLog, difId, difSegmento, ruolo, 'Tiri');
       out.push({
         attId, difId, ruolo, metricKey: m.key, metricLabel: m.label,
         prodRank, prodEligible: prod.eligible, prodValue: prodRows[prodIdx].value,
         concRank, concEligible: conc.eligible, concValue: concRows[concIdx].value,
         combinedScore: (prod.eligible + 1 - prodRank) + (conc.eligible + 1 - concRank),
         interprete: crossInterpreter(model, matchLog, rosters, attId, ruolo, difId, attVenueLetter, m.modelMetric),
-        // Lato campo: sempre null in UCL (dataset senza Lato_Campo), ma teniamo la stessa
-        // chiamata della repo Serie A per coerenza di struttura dati tra i due motori.
-        lato: roleConcessionsSideBreakdown(matchLog, difId, difSegmento, ruolo, m.key),
+        lato,
       });
     }
   }
