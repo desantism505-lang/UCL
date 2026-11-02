@@ -944,9 +944,8 @@ function artRuoloDef(ruolo) {
 // corpo del fatto (tiri/falli prodotti e concessi) sia nel dato di contesto
 // sul lato campo (latoContestoHtml), che in precedenza diceva sempre "tiri
 // storici" anche quando il fatto era sui falli — bug corretto il 29/10/2026.
-// (In questa repo roleConcessionsSideBreakdown resta inerte: nessun
-// Lato_Campo nei dati sorgente UCL — vedi ARCHITECTURE.md. Il fix qui è di
-// pari passo con serie-a-tool, per quando/se il dato arriverà.)
+// (roleConcessionsSideBreakdown è attivo anche qui: Lato_Campo reale nei
+// dati sorgente UCL da Excel G3, 3/11/2026 — stessa logica di serie-a-tool.)
 const CROSS_METRIC_UNIT = { Tiri: 'tiri', Tiri_in_porta: 'tiri in porta', Falli_commessi: 'falli' };
 const PLAYER_METRICS = [
   ['Tiri_90', 'tiri'], ['SOT_90', 'tiri in porta'], ['FC_90', 'falli commessi'],

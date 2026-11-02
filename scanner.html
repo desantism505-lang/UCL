@@ -2072,8 +2072,8 @@ document.querySelectorAll('#scnTable th.sortable').forEach(th => {
 // playerPrevalentSide (engine.js) ritorna null quando il ruolo non è
 // idoneo, il campione è sotto soglia o il giocatore non ha un lato
 // stabile: in quel caso l'etichetta è semplicemente assente, mai forzata.
-// In questa repo (UCL) ritorna sempre null finché non ci sarà Lato_Campo
-// nei dati sorgente — la riga resta invariata, come prima.
+// Dati UCL con Lato_Campo reale da Excel G3 (3/11/2026): ora valorizzata
+// anche qui, stessa logica di serie-a-tool.
 const SCN_LATO_ABBR = { Sinistra: 'sx', Destra: 'dx', Centro: 'centro' };
 let _scnLatoCache = {};
 function scnLatoLabel(player){

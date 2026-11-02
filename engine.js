@@ -1840,15 +1840,14 @@ function crossExtremesOneSide(matchLog, rosters, teamsAll, attId, attVenueLetter
       const concTied = concRows.filter((x) => x.value === concRows[concIdx].value).length;
       if (prodTied > FATTI_MAX_TIE || concTied > FATTI_MAX_TIE) continue;
       const difSegmento = difVenueLetter === 'H' ? 'HOME' : 'AWAY';
-      // Lato campo: sempre null in UCL (dataset senza Lato_Campo), ma teniamo la stessa
-      // logica (con fallback su 'Tiri' quando la colonna specifica della metrica non basta,
-      // richiesta Marco 25/10) della repo Serie A per coerenza di struttura dati tra i due motori.
+      // Lato campo: da Excel G3 (3/11) i dati UCL includono Lato_Campo reale — stessa
+      // logica di Serie A, incluso il fallback su 'Tiri' quando la colonna specifica della
+      // metrica non basta (richiesta Marco 25/10).
       let lato = roleConcessionsSideBreakdown(matchLog, difId, difSegmento, ruolo, m.key);
       if (!lato && m.key !== 'Falli_commessi') lato = roleConcessionsSideBreakdown(matchLog, difId, difSegmento, ruolo, 'Tiri');
       const interprete = crossInterpreter(model, matchLog, rosters, attId, ruolo, difId, attVenueLetter, m.modelMetric);
-      // Corrispondenza interprete <-> dato di contesto (richiesta Marco 25/10): sempre no-op
-      // in UCL dato che lato è sempre null qui, ma teniamo la stessa logica della repo Serie A
-      // per coerenza di struttura tra i due motori.
+      // Corrispondenza interprete <-> dato di contesto (richiesta Marco 25/10), stessa logica
+      // di Serie A: ora attiva anche in UCL dato che Lato_Campo è reale dal G3 in poi.
       if (lato && interprete) {
         const domSide = lato.sinistra >= lato.destra && lato.sinistra >= lato.centro ? 'Sinistra' : (lato.destra >= lato.centro ? 'Destra' : 'Centro');
         const playerSide = playerPrevalentSide(matchLog, interprete.id, ruolo, attId);
@@ -2305,8 +2304,7 @@ function generateMatchNarrative(matchLog, calendar, rosters, match) {
       awayWeak2: awayWeakX.secondary ? awayWeakX.secondary.row : null,
       homeWeakSOT: homeWeakX.sotWeak, awayWeakSOT: awayWeakX.sotWeak,
       awayExploiters, homeExploiters, shootEff,
-      // Lato campo: sempre null in UCL (dataset senza Lato_Campo), ma teniamo la stessa
-      // struttura dati della repo Serie A per coerenza tra i due motori.
+      // Lato campo: dati reali da Excel G3 (3/11) in poi, stessa struttura di Serie A.
       homeWeakLato: (homeWeak && homeWeakMetric === 'Tiri') ? roleConcessionsSideBreakdown(matchLog, homeId, 'HOME', homeWeak.Posizione_Analitica, 'Tiri') : null,
       awayWeakLato: (awayWeak && awayWeakMetric === 'Tiri') ? roleConcessionsSideBreakdown(matchLog, awayId, 'AWAY', awayWeak.Posizione_Analitica, 'Tiri') : null,
     },
