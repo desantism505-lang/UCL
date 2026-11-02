@@ -1977,7 +1977,7 @@ function renderNotableFactsPanel(match){
     const FACT_CATEGORY_ORDER = {
       'Squadra': 0, 'Confronto diretto': 0, 'Serie': 0,
       'Matchup ruolo': 1,
-      'Giocatore · Serie A': 2, 'Giocatore · ruolo': 2,
+      'Giocatore · Champions League': 2, 'Giocatore · ruolo': 2,
     };
     top.sort((a, b) => (FACT_CATEGORY_ORDER[a.tag] ?? 9) - (FACT_CATEGORY_ORDER[b.tag] ?? 9));
     return [...top, ...arbitroFactsForSide(match, side, venueLabel), ...goalLineFactsForSide(teamId, venue, venueLabel)];
