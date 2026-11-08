@@ -1788,7 +1788,12 @@ function fattiRuoloVsAvversario(matchLog, rosters, teamId, oppId, oppVenueLetter
 // gia' scelta da Marco per questa fase iniziale di Champions League.
 // ---------------------------------------------------------------------------
 const CROSS_EXTREME_RANK = 3;
-const CROSS_EXTREME_MIN_ELIGIBLE = 6; // = eligible>=6 gia' richiesto in fattiRuoloVsAvversario
+// Soglia abbassata da 6 a 4 SOLO in questa repo UCL (richiesta Marco 08/11):
+// con 36 squadre e fase a girone unico appena iniziata, 6 squadre eleggibili
+// (>=2 partite nello stesso venue) è un tetto che si raggiunge tardi — 4 fa
+// uscire i primi incroci prima, restando comunque un campione minimo reale
+// (non 1-2 partite). Da rialzare a 6 (valore Serie A) più avanti in stagione.
+const CROSS_EXTREME_MIN_ELIGIBLE = 4;
 const CROSS_EXTREME_METRICS = [
   { key: 'Tiri', label: 'tiri', prodCol: 'Tiri_Prodotti_90', concCol: 'Tiri_Concessi_90', modelMetric: 'Tiri' },
   { key: 'Tiri_in_porta', label: 'tiri in porta', prodCol: 'SOT_Prodotti_90', concCol: 'SOT_Concessi_90', modelMetric: 'SOT' },
