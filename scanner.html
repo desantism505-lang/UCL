@@ -215,6 +215,7 @@
   #scrFilterPanel #scrFClear{height:28px;box-sizing:border-box;padding:0 10px;border-radius:7px;font:500 11.5px 'Inter',sans-serif;white-space:nowrap;line-height:1;cursor:pointer;transition:border-color .15s,color .15s,background-color .15s;}
   #scrFilterPanel select{flex:none;appearance:none;-webkit-appearance:none;padding-right:24px;color:var(--text);border:1px solid var(--line);background:var(--panel) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none' stroke='%2393A897' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 9px center;}
   #scrFilterPanel select:hover{border-color:var(--accent-dim);}
+  #scrFilterPanel select option{background-color:var(--panel);color:var(--text);}
   #scrFilterPanel select:focus-visible,#scrFilterPanel .msdrop-btn:focus-visible,#scrFilterPanel #scrFClear:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
   #scrFilterPanel #scrFTit{width:112px;}
   #scrFilterPanel #scrFEsito{width:96px;}
@@ -426,7 +427,7 @@
   .msdrop-btn{background:var(--panel);color:var(--text);border:1px solid var(--line);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-family:'Inter',sans-serif;}
   .msdrop-btn:hover{border-color:var(--accent-dim);}
   .msdrop-btn.active-filter{border-color:var(--accent);color:var(--accent);}
-  .msdrop-panel{position:absolute;top:100%;left:0;margin-top:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;z-index:30;display:none;flex-direction:column;gap:5px;min-width:170px;box-shadow:0 6px 16px rgba(0,0,0,0.4);}
+  .msdrop-panel{position:absolute;top:100%;left:0;margin-top:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;z-index:30;display:none;flex-direction:column;gap:5px;min-width:170px;max-height:min(360px, 60vh);overflow-y:auto;box-shadow:0 6px 16px rgba(0,0,0,0.4);}
   .msdrop-panel.open{display:flex;}
   .msdrop-panel label{display:flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;font-size:12px;color:var(--text-2);}
   /* Cursore quota a doppio estremo (richiesta Marco, 25/10) — sostituisce i
@@ -441,6 +442,8 @@
   .quota-slider .qs-handle:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
   .quota-labels{display:flex;justify-content:space-between;font-size:11px;color:var(--text-2);margin-top:6px;font-family:'Inter',sans-serif;}
   .quota-labels b{color:var(--text);font-weight:700;}
+  .qs-input{width:52px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:2px 4px;font-size:11px;font-weight:700;font-family:'Inter',sans-serif;text-align:center;}
+  .qs-input:focus{outline:2px solid var(--accent);outline-offset:1px;}
   .quota-reset{width:100%;margin-top:8px;font-size:11px;padding:4px 0;background:none;color:var(--muted);border:1px solid var(--line);border-radius:6px;cursor:pointer;font-family:'Inter',sans-serif;}
   .quota-reset:hover{border-color:var(--accent);color:var(--accent);}
   .filter-group label{
@@ -668,7 +671,7 @@
               <div class="qs-handle" data-h="lo" tabindex="0" role="slider" aria-label="Quota minima"></div>
               <div class="qs-handle" data-h="hi" tabindex="0" role="slider" aria-label="Quota massima"></div>
             </div>
-            <div class="quota-labels"><span>da <b id="scnQuotaLoLabel">1,00</b></span><span>a <b id="scnQuotaHiLabel">3,00+</b></span></div>
+            <div class="quota-labels"><span>da <input type="text" inputmode="decimal" class="qs-input" id="scnQuotaLoLabel" value="1,00" aria-label="Quota minima (anche a mano)" onchange="quotaInputChange('scn','lo',this.value)" onclick="event.stopPropagation()"></span><span>a <input type="text" inputmode="decimal" class="qs-input" id="scnQuotaHiLabel" value="3,00+" aria-label="Quota massima (anche a mano)" onchange="quotaInputChange('scn','hi',this.value)" onclick="event.stopPropagation()"></span></div>
             <button type="button" class="quota-reset" onclick="resetQuotaSlider('scn')">Reset</button>
           </div>
         </div>
@@ -721,6 +724,10 @@
       <div id="scrFilterPanel" role="toolbar" aria-label="Filtri preferiti">
         <svg class="fav-fi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Filtra preferiti"><title>Filtra preferiti</title><path d="M3 5h18l-7 8.5V20l-4-2v-4.5z"/></svg>
         <input type="text" id="scrFText" placeholder="Cerca giocatore o partita" aria-label="Cerca giocatore o partita" />
+        <div class="msdrop" id="scrFGiornataDrop">
+          <button type="button" class="msdrop-btn" onclick="toggleMsDrop('scrFGiornataDrop')">Giornata ▾</button>
+          <div class="msdrop-panel" id="scrFGiornataPanel"></div>
+        </div>
         <div class="msdrop" id="scrFMatchDrop">
           <button type="button" class="msdrop-btn" onclick="toggleMsDrop('scrFMatchDrop')">Partita ▾</button>
           <div class="msdrop-panel" id="scrFMatchPanel"></div>
@@ -823,7 +830,7 @@
               <div class="qs-handle" data-h="lo" tabindex="0" role="slider" aria-label="Quota minima"></div>
               <div class="qs-handle" data-h="hi" tabindex="0" role="slider" aria-label="Quota massima"></div>
             </div>
-            <div class="quota-labels"><span>da <b id="scrQuotaLoLabel">1,00</b></span><span>a <b id="scrQuotaHiLabel">3,00+</b></span></div>
+            <div class="quota-labels"><span>da <input type="text" inputmode="decimal" class="qs-input" id="scrQuotaLoLabel" value="1,00" aria-label="Quota minima (anche a mano)" onchange="quotaInputChange('scr','lo',this.value)" onclick="event.stopPropagation()"></span><span>a <input type="text" inputmode="decimal" class="qs-input" id="scrQuotaHiLabel" value="3,00+" aria-label="Quota massima (anche a mano)" onchange="quotaInputChange('scr','hi',this.value)" onclick="event.stopPropagation()"></span></div>
             <button type="button" class="quota-reset" onclick="resetQuotaSlider('scr')">Reset</button>
           </div>
         </div>
@@ -1593,7 +1600,11 @@ function runScanGiornata(){
 
   for (const match of matches) {
     for (const [venue, teamId] of [['HOME', match.Home_ID], ['AWAY', match.Away_ID]]) {
-      const players = DB.rosters.filter(p => p.Attivo_SerieA === 'SI' && p.Team_ID_Rif === teamId && !exclGiornata.has(p.Player_ID));
+      // Portieri esclusi dallo Scanner: stessa regola già in uso nel Matchup Engine
+      // per i Fatti salienti (richiesta Marco, 17/10) — mai applicata qui finora.
+      // Con 1 sola partita di campione minimo (UCL) un singolo episodio isolato di
+      // un portiere può passare i filtri e comparire come "scopertura" senza senso.
+      const players = DB.rosters.filter(p => p.Attivo_SerieA === 'SI' && p.Team_ID_Rif === teamId && p.Posizione_Analitica !== 'Portiere' && !exclGiornata.has(p.Player_ID));
       const venueLetter = venue === 'HOME' ? 'H' : 'A';
       for (const player of players) {
         const pTot = computePlayerStats(DB.matchLog, player.Player_ID, 'TOTALE', null, teamId);
@@ -1846,8 +1857,12 @@ function quotaSliderRender(prefix){
   const hiTxt = st.hi >= QUOTA_RANGE_MAX ? '3,00+' : st.hi.toFixed(2).replace('.', ',');
   const loLabel = document.getElementById(prefix + 'QuotaLoLabel');
   const hiLabel = document.getElementById(prefix + 'QuotaHiLabel');
-  if (loLabel) loLabel.textContent = loTxt;
-  if (hiLabel) hiLabel.textContent = hiTxt;
+  // Sono input editabili a mano (richiesta Marco, 08/11): non li
+  // sovrascrivo mentre l'utente ci sta scrivendo dentro, altrimenti ogni
+  // render (es. durante il drag dell'altra maniglia) gli cancella quello
+  // che stava digitando.
+  if (loLabel && document.activeElement !== loLabel) loLabel.value = loTxt;
+  if (hiLabel && document.activeElement !== hiLabel) hiLabel.value = hiTxt;
   const active = st.lo > QUOTA_RANGE_MIN || st.hi < QUOTA_RANGE_MAX;
   const btn = document.querySelector('#' + prefix + 'FQuotaDrop .msdrop-btn');
   if (btn) {
@@ -1866,6 +1881,24 @@ function quotaSliderBuckets(prefix){
 }
 function resetQuotaSlider(prefix){
   _quotaSlider[prefix] = { lo: QUOTA_RANGE_MIN, hi: QUOTA_RANGE_MAX };
+  quotaSliderRender(prefix);
+  quotaSliderApply(prefix);
+}
+// Inserimento a mano della quota (richiesta Marco, 08/11) — in aggiunta al
+// trascinare le maniglie, non in sostituzione. Accetta sia virgola che
+// punto come separatore decimale e un eventuale "+" finale (es. "3,00+",
+// lo stesso formato mostrato in automatico per l'estremo superiore senza
+// tetto). Un valore non numerico o vuoto annulla la modifica e ripristina
+// quello attuale, senza toccare lo stato — stesso comportamento "non
+// rompere nulla" di un input non valido su scnQuotaInput.
+function quotaInputChange(prefix, which, rawValue){
+  const cleaned = String(rawValue).trim().replace(',', '.').replace(/\+$/, '');
+  const v = parseFloat(cleaned);
+  if (!isFinite(v)) { quotaSliderRender(prefix); return; } // non numerico: ripristina il valore mostrato
+  const clamped = Math.max(QUOTA_RANGE_MIN, Math.min(QUOTA_RANGE_MAX, v));
+  const st = quotaState(prefix);
+  if (which === 'lo') st.lo = Math.min(clamped, st.hi);
+  else st.hi = Math.max(clamped, st.lo);
   quotaSliderRender(prefix);
   quotaSliderApply(prefix);
 }
@@ -2067,8 +2100,8 @@ document.querySelectorAll('#scnTable th.sortable').forEach(th => {
 // playerPrevalentSide (engine.js) ritorna null quando il ruolo non è
 // idoneo, il campione è sotto soglia o il giocatore non ha un lato
 // stabile: in quel caso l'etichetta è semplicemente assente, mai forzata.
-// In questa repo (UCL) ritorna sempre null finché non ci sarà Lato_Campo
-// nei dati sorgente — la riga resta invariata, come prima.
+// Dati UCL con Lato_Campo reale da Excel G3 (3/11/2026): ora valorizzata
+// anche qui, stessa logica di serie-a-tool.
 const SCN_LATO_ABBR = { Sinistra: 'sx', Destra: 'dx', Centro: 'centro' };
 let _scnLatoCache = {};
 function scnLatoLabel(player){
@@ -2515,6 +2548,7 @@ function scrFilters(){
   return {
     text: (document.getElementById('scrFText').value || '').trim().toLowerCase(),
     matches: getCheckedValues('.scrFMatchChk'), // checkbox multi-partita (richiesta Marco 26/10)
+    giornate: getCheckedValues('.scrFGiornataChk'), // checkbox multi-giornata
     cv: getCheckedValues('.scrFCVChk'),
     mercati: getCheckedValues('.scrFMercatoChk'),
     linee: getCheckedValues('.scrFLineaChk').map(Number),
@@ -2580,6 +2614,7 @@ function applyScrFilters(rows){
       if (!hay.includes(f.text)) return false;
     }
     if (f.matches.length && !f.matches.includes(r.partita)) return false;
+    if (f.giornate.length && !f.giornate.includes(String(r.giornata))) return false;
     if (f.mercati.length && !f.mercati.includes(r.mercato)) return false;
     if (f.linee.length && !f.linee.includes(Number(r.linea))) return false;
     if (f.venue && r.venue !== f.venue) return false;
@@ -2638,10 +2673,11 @@ document.getElementById('scrFClear').addEventListener('click', () => {
   document.getElementById('scrFTit').value = '';
   document.querySelector('.scrFVenueRad[value=""]').checked = true;
   updateScrVenueLabel();
-  document.querySelectorAll('.scrFMatchChk,.scrFCVChk,.scrFMercatoChk,.scrFLineaChk,.scrFHitChk,.scrFHitStagChk,.scrFEdgeChk,.scrFEvChk,.scrFRuoloChk').forEach(chk => { chk.checked = false; });
+  document.querySelectorAll('.scrFMatchChk,.scrFGiornataChk,.scrFCVChk,.scrFMercatoChk,.scrFLineaChk,.scrFHitChk,.scrFHitStagChk,.scrFEdgeChk,.scrFEvChk,.scrFRuoloChk').forEach(chk => { chk.checked = false; });
   updateFavDropLabel('scrFCVDrop','Consistenza','.scrFCVChk');
   resetQuotaSlider('scr');
   updateFavDropLabel('scrFMatchDrop','Partita','.scrFMatchChk');
+  updateFavDropLabel('scrFGiornataDrop','Giornata','.scrFGiornataChk');
   updateFavDropLabel('scrFMercatoDrop','Giocata','.scrFMercatoChk');
   updateFavDropLabel('scrFLineaDrop','Linea','.scrFLineaChk');
   updateFavDropLabel('scrFHitDrop','Hit venue','.scrFHitChk');
@@ -2666,21 +2702,42 @@ document.querySelectorAll('#scrTable th.sortable').forEach(th => {
 // salvati (r.partita, es. "Lecce – Milan"). Ricostruita solo quando l'insieme
 // delle partite tra i preferiti cambia (non ad ogni render/filtro), così non
 // si chiude il menu a tendina ad ogni checkbox cliccata dentro di esso.
+let _scrGiornataFilterKey = null;
+function populateScrGiornataFilterIfNeeded(){
+  const giornate = [...new Set(screenerRows.map(r => r.giornata))].sort((a,b)=>a-b);
+  const key = giornate.join('|');
+  if (key === _scrGiornataFilterKey) return;
+  _scrGiornataFilterKey = key;
+  const already = new Set(getCheckedValues('.scrFGiornataChk'));
+  const panel = document.getElementById('scrFGiornataPanel');
+  panel.innerHTML = giornate.length
+    ? giornate.map(g => `<label><input type="checkbox" class="scrFGiornataChk" value="${g}" ${already.has(String(g)) ? 'checked' : ''} /> Giornata ${g}</label>`).join('')
+    : '<div class="subtle" style="padding:2px 4px;">Nessuna giornata tra i preferiti.</div>';
+  panel.querySelectorAll('.scrFGiornataChk').forEach(chk => chk.addEventListener('change', () => { updateFavDropLabel('scrFGiornataDrop','Giornata','.scrFGiornataChk'); renderScreener(); }));
+  updateFavDropLabel('scrFGiornataDrop','Giornata','.scrFGiornataChk');
+}
 let _scrMatchFilterKey = null;
+// A cascata sulla Giornata (richiesta Marco 2/11): se e' selezionata una o piu'
+// giornate, l'elenco Partita mostra solo le partite di quelle giornate - non
+// tutte le partite tra i preferiti. Selezioni Partita non piu' valide per la
+// giornata appena scelta vengono scartate (non restano "fantasma" spuntate).
 function populateScrMatchFilterIfNeeded(){
-  const partite = [...new Set(screenerRows.map(r => r.partita))].sort();
-  const key = partite.join('|');
+  const selGiornate = getCheckedValues('.scrFGiornataChk');
+  const pool = selGiornate.length ? screenerRows.filter(r => selGiornate.includes(String(r.giornata))) : screenerRows;
+  const partite = [...new Set(pool.map(r => r.partita))].sort();
+  const key = selGiornate.join(',') + '::' + partite.join('|');
   if (key === _scrMatchFilterKey) return;
   _scrMatchFilterKey = key;
-  const already = new Set(getCheckedValues('.scrFMatchChk'));
+  const already = new Set(getCheckedValues('.scrFMatchChk').filter(p => partite.includes(p)));
   const panel = document.getElementById('scrFMatchPanel');
   panel.innerHTML = partite.length
     ? partite.map(p => `<label><input type="checkbox" class="scrFMatchChk" value="${escAttr(p)}" ${already.has(p) ? 'checked' : ''} /> ${escAttr(p)}</label>`).join('')
-    : '<div class="subtle" style="padding:2px 4px;">Nessuna partita tra i preferiti.</div>';
+    : '<div class="subtle" style="padding:2px 4px;">Nessuna partita tra i preferiti' + (selGiornate.length ? ' per la giornata scelta.' : '.') + '</div>';
   panel.querySelectorAll('.scrFMatchChk').forEach(chk => chk.addEventListener('change', () => { updateFavDropLabel('scrFMatchDrop','Partita','.scrFMatchChk'); renderScreener(); }));
   updateFavDropLabel('scrFMatchDrop','Partita','.scrFMatchChk');
 }
 function renderScreener(){
+  populateScrGiornataFilterIfNeeded();
   populateScrMatchFilterIfNeeded();
   favSyncFilterStyle();
   const body = document.getElementById('scrBody');

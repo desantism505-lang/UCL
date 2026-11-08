@@ -1820,10 +1820,20 @@ function crossInterpreter(model, matchLog, rosters, attId, ruolo, difId, attVenu
     const rows = matchLog.filter((x) => x.Player_ID === r.Player_ID);
     const min = rows.reduce((a, x) => a + (Number(x.Minuti) || 0), 0);
     if (min < CROSS_INTERPRETER_MIN_MIN) continue;
+    // Minutaggio nel venue reale di questa partita (richiesta Marco 30/10: il minutaggio
+    // mostrato in analisi partita deve riferirsi al venue, non solo al totale stagione).
+    // Sotto soglia (< BASELINE_THRESHOLDS.minNVenue presenze in quel venue — in questa repo
+    // la soglia è 1, non 2 come in serie-a-tool, per scelta già fatta altrove nel motore)
+    // il dato venue è troppo rumoroso per essere il numero principale: si mantiene il
+    // totale stagione come riferimento, il venue resta disponibile ma etichettato
+    // "campione minimo" lato rendering.
+    const venueRows = rows.filter((x) => x.Team_ID === attId && x.Venue === attVenueLetter);
+    const venueMin = venueRows.reduce((a, x) => a + (Number(x.Minuti) || 0), 0);
+    const venueGames = venueRows.length;
     const player = { id: r.Player_ID, team: attId, ruolo };
     const pr = projectPlayer(model, matchLog, player, difId, true, modelMetric, attVenueLetter);
     if (pr.mu == null) continue;
-    if (!best || pr.mu > best.mu) best = { id: r.Player_ID, nome: r.Nome_completo, mu: pr.mu, min, affidabilita: pr.affidabilita };
+    if (!best || pr.mu > best.mu) best = { id: r.Player_ID, nome: r.Nome_completo, mu: pr.mu, min, venueMin, venueGames, affidabilita: pr.affidabilita };
   }
   return best;
 }
@@ -1847,15 +1857,14 @@ function crossExtremesOneSide(matchLog, rosters, teamsAll, attId, attVenueLetter
       const concTied = concRows.filter((x) => x.value === concRows[concIdx].value).length;
       if (prodTied > FATTI_MAX_TIE || concTied > FATTI_MAX_TIE) continue;
       const difSegmento = difVenueLetter === 'H' ? 'HOME' : 'AWAY';
-      // Lato campo: sempre null in UCL (dataset senza Lato_Campo), ma teniamo la stessa
-      // logica (con fallback su 'Tiri' quando la colonna specifica della metrica non basta,
-      // richiesta Marco 25/10) della repo Serie A per coerenza di struttura dati tra i due motori.
+      // Lato campo: da Excel G3 (3/11) i dati UCL includono Lato_Campo reale — stessa
+      // logica di Serie A, incluso il fallback su 'Tiri' quando la colonna specifica della
+      // metrica non basta (richiesta Marco 25/10).
       let lato = roleConcessionsSideBreakdown(matchLog, difId, difSegmento, ruolo, m.key);
       if (!lato && m.key !== 'Falli_commessi') lato = roleConcessionsSideBreakdown(matchLog, difId, difSegmento, ruolo, 'Tiri');
       const interprete = crossInterpreter(model, matchLog, rosters, attId, ruolo, difId, attVenueLetter, m.modelMetric);
-      // Corrispondenza interprete <-> dato di contesto (richiesta Marco 25/10): sempre no-op
-      // in UCL dato che lato è sempre null qui, ma teniamo la stessa logica della repo Serie A
-      // per coerenza di struttura tra i due motori.
+      // Corrispondenza interprete <-> dato di contesto (richiesta Marco 25/10), stessa logica
+      // di Serie A: ora attiva anche in UCL dato che Lato_Campo è reale dal G3 in poi.
       if (lato && interprete) {
         const domSide = lato.sinistra >= lato.destra && lato.sinistra >= lato.centro ? 'Sinistra' : (lato.destra >= lato.centro ? 'Destra' : 'Centro');
         const playerSide = playerPrevalentSide(matchLog, interprete.id, ruolo, attId);
@@ -2324,8 +2333,7 @@ function generateMatchNarrative(matchLog, calendar, rosters, match) {
       awayWeak2: awayWeakX.secondary ? awayWeakX.secondary.row : null,
       homeWeakSOT: homeWeakX.sotWeak, awayWeakSOT: awayWeakX.sotWeak,
       awayExploiters, homeExploiters, shootEff,
-      // Lato campo: sempre null in UCL (dataset senza Lato_Campo), ma teniamo la stessa
-      // struttura dati della repo Serie A per coerenza tra i due motori.
+      // Lato campo: dati reali da Excel G3 (3/11) in poi, stessa struttura di Serie A.
       homeWeakLato: (homeWeak && homeWeakMetric === 'Tiri') ? roleConcessionsSideBreakdown(matchLog, homeId, 'HOME', homeWeak.Posizione_Analitica, 'Tiri') : null,
       awayWeakLato: (awayWeak && awayWeakMetric === 'Tiri') ? roleConcessionsSideBreakdown(matchLog, awayId, 'AWAY', awayWeak.Posizione_Analitica, 'Tiri') : null,
     },
