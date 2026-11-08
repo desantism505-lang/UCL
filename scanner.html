@@ -569,11 +569,16 @@
           <option value="4">campione min. 4 partite</option>
           <option value="5">campione min. 5 partite</option>
         </select>
+        <select id="scnTipo" title="Giocatore (default, nessun cambiamento alla vista attuale) · Squadra (Tiri/SOT/Falli/Cartellini/Corner a livello di squadra, lato fatti + Totale partita stimato) · Tutti">
+          <option value="GIOCATORE" selected>Tipo: Giocatore</option>
+          <option value="SQUADRA">Tipo: Squadra</option>
+          <option value="TUTTI">Tipo: Tutti</option>
+        </select>
         <button id="scnRun">Scansiona</button>
         <button id="scnExport" class="btn-export" disabled>⬇ Scarica Excel</button>
       </div>
 
-      <div class="filter-group" style="margin-bottom:6px;">
+      <div class="filter-group" id="scnMercatoGroup" style="margin-bottom:6px;">
         <span class="filter-label">Mercati:</span>
         <label><input type="checkbox" class="scnMercatoChk" value="TIRI" checked /> Tiri</label>
         <label><input type="checkbox" class="scnMercatoChk" value="TIRI_IN_PORTA" checked /> Tiri in porta</label>
@@ -581,7 +586,16 @@
         <label><input type="checkbox" class="scnMercatoChk" value="FALLI_SUBITI" checked /> Falli subiti</label>
         <label><input type="checkbox" class="scnMercatoChk" value="CARTELLINO" checked /> Cartellino</label>
       </div>
-      <div class="filter-group">
+      <div class="filter-group" id="scnMercatoSquadraGroup" style="margin-bottom:6px;display:none;">
+        <span class="filter-label">Mercati squadra:</span>
+        <label><input type="checkbox" class="scnMercatoSquadraChk" value="TIRI" checked /> Tiri</label>
+        <label><input type="checkbox" class="scnMercatoSquadraChk" value="TIRI_IN_PORTA" checked /> Tiri in porta</label>
+        <label><input type="checkbox" class="scnMercatoSquadraChk" value="FALLI" checked /> Falli</label>
+        <label><input type="checkbox" class="scnMercatoSquadraChk" value="CARTELLINO" checked /> Cartellino</label>
+        <label><input type="checkbox" class="scnMercatoSquadraChk" value="CORNER" checked /> Corner</label>
+        <label style="margin-left:14px;"><input type="checkbox" id="scnSquadraTotale" checked /> Includi Totale partita (stima)</label>
+      </div>
+      <div class="filter-group" id="scnLineeGroup">
         <span class="filter-label">Linee:</span>
         <label><input type="checkbox" class="scnLineaChk" value="0.5" checked /> 1+</label>
         <label><input type="checkbox" class="scnLineaChk" value="1.5" checked /> 2+</label>
@@ -1022,6 +1036,9 @@ function saveScnState(){
       minN: document.getElementById('scnMinN').value,
       mercati: getCheckedValues('.scnMercatoChk'),
       linee: getCheckedValues('.scnLineaChk'),
+      tipo: document.getElementById('scnTipo').value,
+      mercatiSquadra: getCheckedValues('.scnMercatoSquadraChk'),
+      squadraTotale: document.getElementById('scnSquadraTotale').checked,
       text: document.getElementById('scnFText').value,
       venue: getScnVenue(),
       tit: document.getElementById('scnFTit').value,
@@ -1070,6 +1087,10 @@ function applyScnState(currentAuto){
   if (state.minN) document.getElementById('scnMinN').value = state.minN;
   if (state.mercati) checkOnly('.scnMercatoChk', state.mercati);
   if (state.linee) checkOnly('.scnLineaChk', state.linee);
+  if (state.tipo) document.getElementById('scnTipo').value = state.tipo;
+  if (state.mercatiSquadra) checkOnly('.scnMercatoSquadraChk', state.mercatiSquadra);
+  if (state.squadraTotale !== undefined) document.getElementById('scnSquadraTotale').checked = state.squadraTotale;
+  scnApplyTipoVisibility();
   if (state.text != null) document.getElementById('scnFText').value = state.text;
   if (state.venue !== undefined) {
     const rad = document.querySelector(`.scnFVenueRad[value="${state.venue}"]`);
@@ -1320,6 +1341,33 @@ function hitChip(v){
   return `<span class="chip ${cls}">${pct(v)}</span>`;
 }
 
+// Scanner squadra (porta da serie-a-tool, 08/11): mercati a livello di
+// squadra, solo lato FATTI (niente subiti). Linee in formato Over X,5 come le
+// quote reali, usate direttamente in teamHitRate/probAtLeastAlpha (count >
+// linea), non con la notazione "X+" dei giocatori.
+// NOTA UCL: con 36 squadre e girone unico a inizio stagione i campioni per
+// venue (N) sono più piccoli che in Serie A a pari giornata — minN resta un
+// filtro dell'utente, qui non abbassato artificialmente.
+const SCN_TEAM_METRICS = {
+  TIRI:           { label: 'Tiri', key: 'Tiri', lineeTeam: [7.5, 9.5, 11.5, 13.5], lineeTotale: [17.5, 19.5, 21.5, 23.5, 25.5] },
+  TIRI_IN_PORTA:  { label: 'Tiri in porta', key: 'SOT', lineeTeam: [2.5, 3.5, 4.5, 5.5], lineeTotale: [6.5, 7.5, 8.5, 9.5] },
+  FALLI:          { label: 'Falli', key: 'Falli', lineeTeam: [7.5, 9.5, 11.5, 13.5], lineeTotale: [17.5, 19.5, 21.5, 23.5] },
+  CARTELLINO:     { label: 'Cartellino', key: 'Cart', lineeTeam: [0.5, 1.5, 2.5], lineeTotale: [1.5, 2.5, 3.5, 4.5] },
+  CORNER:         { label: 'Corner', key: 'Corner', lineeTeam: [2.5, 3.5, 4.5, 5.5], lineeTotale: [6.5, 7.5, 8.5, 9.5], needsCalendar: true },
+};
+// Somma di due Poisson indipendenti (attacco casa + attacco trasferta, ognuno
+// nella propria venue) e' ancora Poisson di media = somma delle medie: usata
+// per stimare la riga "Totale partita" quando le due squadre non hanno mai
+// giocato tra loro. Sempre una STIMA, mai un hit-rate storico vero.
+function teamTotaleProb(muTotale, linea) {
+  if (muTotale == null || !Number.isFinite(muTotale)) return null;
+  return probAtLeastAlpha(muTotale, linea + 0.5, 0);
+}
+const MARKET_LABELS_SQUADRA = {
+  TIRI: 'Tiri (squadra)', TIRI_IN_PORTA: 'Tiri in porta (squadra)',
+  FALLI: 'Falli (squadra)', CARTELLINO: 'Cartellini (squadra)', CORNER: 'Corner (squadra)',
+};
+
 const MARKET_LINES = {
   TIRI: [
     [0.5, 'Tiri_90', 'Hit_Tiri_1', 'Tiri_CV'],
@@ -1510,6 +1558,25 @@ function saveScanQuotes(){
   catch (e) { /* storage non disponibile: le quote restano solo in sessione */ }
 }
 const scanQuotes = loadScanQuotes(); // chiave riga -> quota inserita, persiste tra ricariche e nuove scansioni
+// "X non proposta dal book" (porta da serie-a-tool, 08/11): marcatore
+// separato dalle quote — una linea può non essere proposta affatto dal
+// bookmaker, diverso da una quota semplicemente non ancora inserita.
+const SCAN_NOBOOK_KEY = 'ucl_scan_nobook_v1';
+function loadScanNoBook(){
+  try { const raw = localStorage.getItem(SCAN_NOBOOK_KEY); return raw ? JSON.parse(raw) : {}; }
+  catch (e) { return {}; }
+}
+function saveScanNoBook(){
+  try { localStorage.setItem(SCAN_NOBOOK_KEY, JSON.stringify(scanNoBook)); }
+  catch (e) { /* storage non disponibile */ }
+}
+const scanNoBook = loadScanNoBook();
+function toggleScnNoBook(key){
+  scanNoBook[key] = !scanNoBook[key];
+  if (!scanNoBook[key]) delete scanNoBook[key];
+  saveScanNoBook();
+  renderScan();
+}
 let sortState = { key: null, dir: 1 };
 
 function scanRowKey(r){
@@ -1520,6 +1587,24 @@ document.getElementById('scnCriterio').addEventListener('change', () => {
   const isHit = document.getElementById('scnCriterio').value === 'HIT';
   document.getElementById('scnMinHitWrap').style.display = isHit ? 'inline-block' : 'none';
 });
+
+// Tipo (Giocatore/Squadra/Tutti): nasconde i controlli solo-giocatore quando
+// Tipo=Squadra, e mostra/nasconde il gruppo Mercati squadra (porta da
+// serie-a-tool, 08/11). .filter-group è display:flex nel CSS (riga
+// orizzontale con wrap): qui va ripristinato 'flex', non 'inline-block',
+// altrimenti le checkbox tornano a impilarsi verticalmente.
+function scnApplyTipoVisibility(){
+  const tipo = document.getElementById('scnTipo').value;
+  const soloSquadra = tipo === 'SQUADRA';
+  const conSquadra = tipo !== 'GIOCATORE';
+  document.getElementById('scnMercatoSquadraGroup').style.display = conSquadra ? 'flex' : 'none';
+  document.getElementById('scnMercatoGroup').style.display = soloSquadra ? 'none' : 'flex';
+  document.getElementById('scnLineeGroup').style.display = soloSquadra ? 'none' : 'flex';
+  document.getElementById('scnFRuoloDrop').style.display = soloSquadra ? 'none' : 'inline-block';
+  document.getElementById('scnFTit').style.display = soloSquadra ? 'none' : 'inline-block';
+  document.getElementById('scnExclList').style.display = soloSquadra ? 'none' : 'inline';
+}
+document.getElementById('scnTipo').addEventListener('change', scnApplyTipoVisibility);
 
 function getCheckedValues(selector){
   return [...document.querySelectorAll(selector)].filter(c => c.checked).map(c => c.value);
@@ -1587,8 +1672,10 @@ function runScanGiornata(){
   if (!DB) return;
   const giornata = Number(document.getElementById('scnGiornata').value);
   const mercatiScelti = getCheckedValues('.scnMercatoChk');
+  const mercatiSquadraScelti = getCheckedValues('.scnMercatoSquadraChk');
   const lineeScelte = getCheckedValues('.scnLineaChk').map(Number);
   const criterio = document.getElementById('scnCriterio').value; // 'MEDIA' | 'HIT'
+  const tipo = document.getElementById('scnTipo').value; // 'GIOCATORE' | 'SQUADRA' | 'TUTTI'
   const minHit = Number(document.getElementById('scnMinHit').value);
   const minN = Number(document.getElementById('scnMinN').value);
   const matchesScelte = getCheckedValues('.scnMatchChk'); // checkbox multi-partita (26/10): vuoto = tutte
@@ -1600,6 +1687,7 @@ function runScanGiornata(){
 
   for (const match of matches) {
     for (const [venue, teamId] of [['HOME', match.Home_ID], ['AWAY', match.Away_ID]]) {
+      if (tipo !== 'SQUADRA') {
       // Portieri esclusi dallo Scanner: stessa regola già in uso nel Matchup Engine
       // per i Fatti salienti (richiesta Marco, 17/10) — mai applicata qui finora.
       // Con 1 sola partita di campione minimo (UCL) un singolo episodio isolato di
@@ -1633,6 +1721,7 @@ function runScanGiornata(){
             else pass = hitV != null && hitV >= minHit;
             if (!pass) continue;
             results.push({
+              type: 'giocatore',
               player, match, venue, mercato, linea, avgKey, hitKey, cvKey,
               hitVenue: hitV, hitStag: hStag.rate,
               mediaVenue: mediaV, mediaStag: pTot[avgKey],
@@ -1642,6 +1731,86 @@ function runScanGiornata(){
               nVenue: hVenue.n,
             });
           }
+        }
+      }
+      } // fine tipo !== 'SQUADRA'
+
+      if (tipo !== 'GIOCATORE') {
+      // SCANNER SQUADRA (porta da serie-a-tool, 08/11), lato FATTI: stessa
+      // struttura di riga del giocatore, con un "player" fittizio che porta
+      // il nome della squadra — così scanRowKey/favKeyOf/template
+      // riga/filtri/ordinamento funzionano identici senza duplicarli.
+      const teamName = venue === 'HOME' ? match.Home : match.Away;
+      const fakeTeamPlayer = {
+        Player_ID: 'SQUADRA_' + teamId + '_' + match.Match_ID,
+        Nome_completo: teamName, Squadra_Rif: teamName,
+        Posizione_Analitica: null, Team_ID_Rif: teamId,
+      };
+      for (const mercato of mercatiSquadraScelti) {
+        const def = SCN_TEAM_METRICS[mercato];
+        if (!def) continue;
+        if (def.needsCalendar && !DB.calendar) continue;
+        const totals = computeTeamMatchTotals(DB.matchLog, teamId, venue, DB.calendar);
+        const totTotale = computeTeamMatchTotals(DB.matchLog, teamId, 'TOTALE', DB.calendar);
+        const stats = teamSeriesStats(totals, def.key);
+        if (stats.n < minN) continue;
+        for (const linea of def.lineeTeam) {
+          const hVenue = teamHitRate(totals, def.key, linea);
+          const hitV = hVenue.rate;
+          const mediaV = stats.mean;
+          let pass;
+          if (criterio === 'MEDIA') pass = mediaV != null && mediaV > linea;
+          else pass = hitV != null && hitV >= minHit;
+          if (!pass) continue;
+          results.push({
+            type: 'squadra',
+            player: fakeTeamPlayer, match, venue, mercato, linea,
+            hitVenue: hitV, hitStag: teamHitRate(totTotale, def.key, linea).rate,
+            mediaVenue: mediaV, mediaStag: teamSeriesStats(totTotale, def.key).mean,
+            mediaL3: null,
+            cv: stats.cv,
+            cvSeries: [],
+            nVenue: hVenue.n,
+          });
+        }
+      }
+      } // fine tipo !== 'GIOCATORE'
+    }
+
+    // TOTALE PARTITA (porta da serie-a-tool, 08/11): una riga per partita/
+    // mercato, combinando le due squadre — FUORI dal loop HOME/AWAY qui
+    // sopra. Stima Poisson (vedi teamTotaleProb), sempre segnalata come tale
+    // (isStima), mai mescolata a un hit-rate storico vero: con 36 squadre e
+    // girone unico, in UCL è anche più comune che due squadre non si siano
+    // mai affrontate prima di questa fase.
+    if (tipo !== 'GIOCATORE' && document.getElementById('scnSquadraTotale').checked) {
+      const fakeTotalePlayer = {
+        Player_ID: 'TOTALE_' + match.Match_ID,
+        Nome_completo: match.Home + ' + ' + match.Away, Squadra_Rif: 'Totale partita',
+        Posizione_Analitica: null, Team_ID_Rif: null,
+      };
+      for (const mercato of mercatiSquadraScelti) {
+        const def = SCN_TEAM_METRICS[mercato];
+        if (!def) continue;
+        if (def.needsCalendar && !DB.calendar) continue;
+        const totH = computeTeamMatchTotals(DB.matchLog, match.Home_ID, 'HOME', DB.calendar);
+        const totA = computeTeamMatchTotals(DB.matchLog, match.Away_ID, 'AWAY', DB.calendar);
+        const sH = teamSeriesStats(totH, def.key), sA = teamSeriesStats(totA, def.key);
+        if (Math.min(sH.n, sA.n) < minN || sH.mean == null || sA.mean == null) continue;
+        const muTotale = sH.mean + sA.mean;
+        for (const linea of def.lineeTotale) {
+          const hitV = teamTotaleProb(muTotale, linea);
+          let pass;
+          if (criterio === 'MEDIA') pass = muTotale > linea;
+          else pass = hitV != null && hitV >= minHit;
+          if (!pass) continue;
+          results.push({
+            type: 'squadra', isStima: true,
+            player: fakeTotalePlayer, match, venue: 'TOTALE', mercato, linea,
+            hitVenue: hitV, hitStag: null,
+            mediaVenue: muTotale, mediaStag: null, mediaL3: null,
+            cv: null, cvSeries: [], nVenue: Math.min(sH.n, sA.n),
+          });
         }
       }
     }
@@ -1728,6 +1897,7 @@ function scnSetQuota(i, val){
 // senza rilanciare la scansione — calcolati al volo per riga.
 function derived(r){
   const key = scanRowKey(r);
+  if (scanNoBook[key]) return { quota: null, prob: null, edge: null, ev: null, noBook: true };
   const quota = scanQuotes[key] ?? null;
   const prob = quota ? 1 / quota : null;
   const edge = (prob != null && r.hitVenue != null) ? r.hitVenue - prob : null;
@@ -2129,31 +2299,50 @@ function renderScan(){
   if (!filtered.length){
     body.innerHTML = '';
     empty.style.display = 'block';
-    empty.textContent = 'Nessuna riga soddisfa i filtri impostati sopra.';
+    empty.textContent = 'Nessun risultato soddisfa i filtri impostati sopra.';
     return;
   }
   empty.style.display = 'none';
   body.innerHTML = filtered.map((r) => {
     const i = scanResults.indexOf(r);
+    const isSquadra = r.type === 'squadra';
+    const key = scanRowKey(r);
+    const noBook = !!scanNoBook[key];
     const { quota, prob, edge, ev } = derived(r);
     const [lo, hi] = wilsonInterval(r.hitVenue, r.nVenue);
     const ciTxt = (lo != null) ? `<span class="subtle">±${Math.round((hi - lo) / 2 * 100)}pp</span>` : '';
     const fav = isFavorited(r);
+    // Riga squadra: niente "✕ indisponibile" (non ha senso per una squadra),
+    // al suo posto il marcatore "X non proposta dal book" (porta da
+    // serie-a-tool, 08/11) — stesso posto visivo, significato diverso.
+    const markBtn = isSquadra
+      ? `<button class="excl-mark" tabindex="-1" style="${noBook ? 'opacity:1;font-weight:bold;' : 'opacity:.5;'}" title="${noBook ? 'Il bookmaker non propone questa linea: click per rimuovere il marcatore' : 'Segna questa voce come NON proposta dal bookmaker (mostra X invece di quota/edge calcolati)'}" onclick="toggleScnNoBook('${key}')">X</button>`
+      : `<button class="excl-mark" tabindex="-1" title="Segna come indisponibile SOLO per la giornata ${r.match.Giornata} (infortunato/squalificato): sparisce da qui finché non lo rimetti da \"Indisponibili\" in alto. Non si propaga alle altre giornate." onclick="toggleScnExcl('${r.player.Player_ID}','${r.match.Giornata}')">✕</button>`;
+    const subtitle = r.isStima ? 'Totale partita · stima Poisson, non hit-rate storico (nessun precedente reale tra queste due squadre)' : (isSquadra ? 'Squadra' : `${r.player.Squadra_Rif} · ${r.player.Posizione_Analitica}${scnLatoLabel(r.player)}`);
+    const mercatoLabel = isSquadra ? MARKET_LABELS_SQUADRA[r.mercato] : MARKET_LABELS[r.mercato];
+    const lineaTxt = isSquadra ? `${String(r.linea).replace('.', ',')}` : lineaLabel(r.linea);
+    const titolareCell = isSquadra ? '<span class="subtle" title="Non applicabile a una voce di squadra">–</span>' : lineupBadge(r);
+    const quotaCell = noBook
+      ? `<span class="subtle" title="Marcato come non proposto dal bookmaker">X</span>`
+      : `<input type="text" inputmode="decimal" placeholder="1.85" id="scnQuotaInput-${i}" value="${fmtQuotaInput(quota)}" style="width:60px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);padding:4px;" onchange="scnSetQuota(${i}, this.value)" onkeydown="return scnQuotaTab(event, ${i})" />`;
+    const probCell = noBook ? 'X' : (prob != null ? pct(prob) : '—');
+    const edgeCell = noBook ? 'X' : (edge != null ? (edge>0?'+':'') + (edge*100).toFixed(1)+'pp' : '—');
+    const evCell = noBook ? 'X' : (ev != null ? (ev>0?'+':'') + ev.toFixed(2)+'€' : '—');
     return `<tr>
-    <td class="metricname">${r.player.Nome_completo}<button class="excl-mark" tabindex="-1" title="Segna come indisponibile SOLO per la giornata ${r.match.Giornata} (infortunato/squalificato): sparisce da qui finché non lo rimetti da \"Indisponibili\" in alto. Non si propaga alle altre giornate." onclick="toggleScnExcl('${r.player.Player_ID}','${r.match.Giornata}')">✕</button><div class="subtle">${r.player.Squadra_Rif} · ${r.player.Posizione_Analitica}${scnLatoLabel(r.player)}</div></td>
+    <td class="metricname">${r.player.Nome_completo}${markBtn}<div class="subtle">${subtitle}</div></td>
     <td>${r.match.Home} – ${r.match.Away}<div class="subtle">${r.venue.toLowerCase()}</div></td>
-    <td class="num">${lineupBadge(r)}</td>
-    <td>${MARKET_LABELS[r.mercato]}</td>
-    <td class="num">${lineaLabel(r.linea)}</td>
+    <td class="num">${titolareCell}</td>
+    <td>${mercatoLabel}</td>
+    <td class="num">${lineaTxt}</td>
     <td class="num nw">${fmt(r.mediaVenue)} <span class="subtle">(N=${r.nVenue})</span></td>
     <td class="num">${fmt(r.mediaL3)}</td>
-    <td>${cvBadge(r)}</td>
-    <td class="num"><div class="hitcell">${hitChip(r.hitVenue)}${ciTxt}</div></td>
-    <td class="num">${pctColored(r.hitStag)}</td>
-    <td class="num"><input type="text" inputmode="decimal" placeholder="1.85" id="scnQuotaInput-${i}" value="${fmtQuotaInput(quota)}" style="width:60px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);padding:4px;" onchange="scnSetQuota(${i}, this.value)" onkeydown="return scnQuotaTab(event, ${i})" /></td>
-    <td class="num" id="scnProb-${i}">${prob != null ? pct(prob) : '—'}</td>
-    <td class="num ${edge != null && edge > 0 ? 'verdict-fav' : (edge != null ? 'verdict-nofav' : '')}" id="scnEdge-${i}">${edge != null ? (edge>0?'+':'') + (edge*100).toFixed(1)+'pp' : '—'}</td>
-    <td class="num ${ev != null && ev > 0 ? 'verdict-fav' : (ev != null ? 'verdict-nofav' : '')}" id="scnEv-${i}">${ev != null ? (ev>0?'+':'') + ev.toFixed(2)+'€' : '—'}</td>
+    <td>${r.isStima ? '<span class="subtle" title="Non calcolabile: nessuno storico head-to-head reale">–</span>' : cvBadge(r)}</td>
+    <td class="num"><div class="hitcell">${r.isStima ? '<span class="subtle" title="Stima Poisson/convoluzione, non un hit-rate storico">~' + pct(r.hitVenue) + '</span>' : hitChip(r.hitVenue)}${ciTxt}</div></td>
+    <td class="num">${r.isStima ? '<span class="subtle">–</span>' : pctColored(r.hitStag)}</td>
+    <td class="num">${quotaCell}</td>
+    <td class="num" id="scnProb-${i}">${probCell}</td>
+    <td class="num ${edge != null && edge > 0 && !noBook ? 'verdict-fav' : (edge != null && !noBook ? 'verdict-nofav' : '')}" id="scnEdge-${i}">${edgeCell}</td>
+    <td class="num ${ev != null && ev > 0 && !noBook ? 'verdict-fav' : (ev != null && !noBook ? 'verdict-nofav' : '')}" id="scnEv-${i}">${evCell}</td>
     <td><button class="rowdel" style="color:var(--accent);font-size:16px;" title="${fav ? 'Rimuovi dai preferiti' : 'Salva tra i preferiti'}" onclick="toggleFavorite(${i})">${fav ? '★' : '☆'}</button></td>
   </tr>`;
   }).join('');
@@ -2180,7 +2369,10 @@ function toggleFavorite(i){
       giocatore: r.player.Nome_completo,
       mercato: r.mercato, linea: r.linea, venue: r.venue,
       mediaStag: r.mediaStag, mediaVenue: r.mediaVenue,
-      mediaL3: computePlayerStats(DB.matchLog, r.player.Player_ID, 'TOTALE', null, r.player.Team_ID_Rif)['L3_' + r.avgKey],
+      // Righe squadra (r.type==='squadra', incluse quelle Totale partita):
+      // niente avgKey/computePlayerStats, quel Player_ID è fittizio —
+      // mediaL3 resta quello già in r (null, vedi runScanGiornata).
+      mediaL3: r.type === 'squadra' ? r.mediaL3 : computePlayerStats(DB.matchLog, r.player.Player_ID, 'TOTALE', null, r.player.Team_ID_Rif)['L3_' + r.avgKey],
       cv: r.cv,
       hitStag: r.hitStag, hitVenue: r.hitVenue, nVenue: r.nVenue,
       esito: null, quota,
@@ -2229,9 +2421,9 @@ function updateScnExport(shown, total){
   if (!b) return;
   b.disabled = !shown;
   b.title = !total ? 'Esegui prima una scansione'
-    : !shown ? 'Nessuna riga visibile con i filtri attuali'
-    : shown < total ? `Scarica Excel delle righe visibili (${shown} di ${total}, filtri attivi)`
-    : `Scarica Excel di tutte le righe scansionate (${total})`;
+    : !shown ? 'Nessun risultato visibile con i filtri attuali'
+    : shown < total ? `Scarica Excel dei risultati visibili (${shown} di ${total}, filtri attivi)`
+    : `Scarica Excel di tutti i risultati scansionati (${total})`;
 }
 function exportScannerXlsx(){
   if (typeof XLSX === 'undefined') { alert('Libreria Excel non caricata: controlla la connessione e riprova.'); return; }
@@ -2287,7 +2479,7 @@ function exportScannerXlsx(){
   const legend = [
     ['Scanner — legenda colonne', ''],
     ['Esportato il', `${p2(now.getDate())}/${p2(now.getMonth() + 1)}/${now.getFullYear()} ${p2(now.getHours())}:${p2(now.getMinutes())}`],
-    ['Righe esportate', `${rows.length} di ${scanResults.length}${rows.length < scanResults.length ? ' (filtri attivi)' : ''}`],
+    ['Risultati esportati', `${rows.length} di ${scanResults.length}${rows.length < scanResults.length ? ' (filtri attivi)' : ''}`],
     ['', ''],
     ['Colonna', 'Cosa significa'],
     ...SCN_XLS_COLS.map(c => [c.h, c.note]),

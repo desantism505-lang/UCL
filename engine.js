@@ -642,6 +642,19 @@ function computeTeamMatchTotals(matchLog, teamId, segmento, calendar) {
 // squadra ha superato (Over) o non raggiunto (Under) una linea libera. Salta
 // le partite dove la metrica è null (es. Corner mancante) invece di contarle
 // come "non superata". mode: 'over' (default) o 'under'.
+// CV/media/sd su una serie di totali-partita di squadra (stessa logica usata
+// per i giocatori) — porta da serie-a-tool (richiesta Marco, Scanner squadra).
+function teamSeriesStats(totals, key) {
+  const valid = totals.filter((t) => t[key] != null).map((t) => Number(t[key]));
+  const n = valid.length;
+  if (!n) return { mean: null, sd: null, cv: null, n: 0, series: [] };
+  const mean = valid.reduce((a, b) => a + b, 0) / n;
+  if (n < 2) return { mean, sd: null, cv: null, n, series: valid };
+  const variance = valid.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1);
+  const sd = Math.sqrt(variance);
+  return { mean, sd, cv: mean ? sd / mean : null, n, series: valid };
+}
+
 function teamHitRate(totals, key, line, mode) {
   if (line == null || !Number.isFinite(line)) return { n: 0, hits: 0, rate: null };
   const valid = totals.filter((t) => t[key] != null);
@@ -2781,6 +2794,7 @@ if (typeof module !== 'undefined') {
     teamGoalMatches,
     computeTeamMatchTotals,
     teamHitRate,
+    teamSeriesStats,
     leagueAverageMetric,
     narrPartiteInVenue,
     narrPlayersInRole,
