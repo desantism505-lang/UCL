@@ -1704,6 +1704,13 @@ const SB_KEY = 'sb_publishable_C5TFWTzvAvIkKsGsvv3i7g_lip5hmUq';
 const sb = (typeof window.supabase !== 'undefined') ? window.supabase.createClient(SB_URL, SB_KEY) : null;
 
 let _arbitroOverridesCache = null;
+// Match_ID modificati in questa sessione (dopo il caricamento pagina): il
+// fetch di sincronizzazione da Supabase (syncArbitroOverridesFromCloud) non
+// deve mai sovrascriverli con un dato più vecchio se arriva dopo — altrimenti
+// un arbitro appena inserito sparisce non appena il fetch (partito al
+// caricamento, prima di questa modifica) completa e rimette la pagina su
+// "scegli arbitro". Bug segnalato da Marco il 24/11/2026.
+const _arbitroOverridesDirty = new Set();
 function loadArbitroOverrides(){
   if (_arbitroOverridesCache) return _arbitroOverridesCache;
   try { _arbitroOverridesCache = JSON.parse(localStorage.getItem(ARBITRO_OVERRIDES_KEY) || '{}'); }
@@ -1714,6 +1721,7 @@ function saveArbitroOverride(matchId, nome){
   const overrides = loadArbitroOverrides();
   if (nome && nome.trim()) overrides[matchId] = nome.trim();
   else delete overrides[matchId];
+  _arbitroOverridesDirty.add(matchId);
   try { localStorage.setItem(ARBITRO_OVERRIDES_KEY, JSON.stringify(overrides)); } catch(e){}
   if (sb) {
     const p = (nome && nome.trim())
@@ -1732,6 +1740,16 @@ async function syncArbitroOverridesFromCloud(){
     if (error) throw error;
     const fresh = {};
     for (const row of data) fresh[row.match_id] = row.arbitro;
+    // Le modifiche fatte in questa sessione (dopo il caricamento pagina,
+    // compresa questa stessa richiesta) restano valide anche se il fetch
+    // cloud arriva dopo con un dato più vecchio: senza questo, selezionare
+    // un arbitro appena prima che il fetch completi lo faceva sparire subito
+    // dopo, tornando su "scegli arbitro".
+    const current = loadArbitroOverrides();
+    for (const matchId of _arbitroOverridesDirty) {
+      if (matchId in current) fresh[matchId] = current[matchId];
+      else delete fresh[matchId];
+    }
     _arbitroOverridesCache = fresh;
     try { localStorage.setItem(ARBITRO_OVERRIDES_KEY, JSON.stringify(fresh)); } catch(e){}
     if (typeof DB !== 'undefined' && DB) render();
