@@ -1761,7 +1761,13 @@ if (sb) syncArbitroOverridesFromCloud();
 
 function arbitriEffettivi(){
   const overrides = loadArbitroOverrides();
-  const daExcel = new Set(DB.arbitri.map(a => a.Match_ID));
+  // Un match "ha già l'arbitro da Excel" solo se il nome è valido — non
+  // basta che esista una riga in ARBITRI: alcune partite future hanno già
+  // una riga con Arbitro vuoto (non ancora reperito). Prima questo faceva
+  // scartare in silenzio qualsiasi arbitro inserito a mano per quei match:
+  // l'override spariva subito dopo il salvataggio. Segnalato da Marco il
+  // 24/11/2026.
+  const daExcel = new Set(DB.arbitri.filter(a => isArbitroNomeValido(a.Arbitro)).map(a => a.Match_ID));
   const extra = Object.entries(overrides)
     .filter(([matchId]) => !daExcel.has(matchId))
     .map(([matchId, nome]) => {
